@@ -1,1 +1,1 @@
-# MetanaSolidityBootcamp
+# metana-bootcamp
