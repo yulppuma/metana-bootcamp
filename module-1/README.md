@@ -6,12 +6,14 @@
 ### VS Code (https://code.visualstudio.com/)
 ### Hardhat (installed via npm) (https://hardhat.org/)
 
-## Setup for Windows
+## Setup for Windows via VS Code terminal
 ### 1. Clone the repository
 ``` git clone git@github.com:yulppuma/metana-bootcamp.git```
-
 ### 2. Install dependencies
 ``` cd module-1```
+
 ```npm install```
-### 3. compile the contracts
+### 3. Compile the contracts
 ``` npx hardhat compile```
+### 4. Run Tests (this compiles the contracts in the background as well)
+``` npx hardhat test```

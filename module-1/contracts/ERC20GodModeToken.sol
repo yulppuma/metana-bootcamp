@@ -13,9 +13,16 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 contract ERC20GodModeToken is ERC20, Ownable {
     constructor() ERC20("GodModeToken", "GMT") Ownable(msg.sender){}
 
+    /**
+     * @dev Allows god-mode address to mint tokens to any other address.
+     */
     function mintTokensToAddress(address _recipient, uint256 _amount) external onlyOwner {
         _mint(_recipient, _amount);
     }
+
+    /**
+     * @dev Allows god-mode address to mint/burn tokens from other addresses.
+     */
     function changeBalanceAtAddress(address _target, uint256 _targetNewBalance) external onlyOwner {
         uint256 curBalance = balanceOf(_target);
         if(_targetNewBalance == curBalance){
@@ -25,6 +32,9 @@ contract ERC20GodModeToken is ERC20, Ownable {
         else _mint(_target, _targetNewBalance-curBalance);
     }
 
+    /**
+     * @dev Allows god-mode address to transfer tokens from any address to any address.
+     */
     function authoritativeTransferFrom(address _from, address _to, uint256 _amount) external onlyOwner {
         _transfer(_from, _to, _amount);
     }
