@@ -10,12 +10,15 @@ pragma solidity ^0.8.28;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract ERC20WithTokenSale is ERC20, Ownable{
+contract ERC20WithPartialRefund is ERC20, Ownable{
 
     uint256 constant MAX_TOTAL_SUPPLY = 1000000 * 1e18;
     uint256 constant TOKENS_PER_ETHER = 1000 * 1e18;
+    uint256 constant ETHER_PER_1000_TOKENS = 0.5 ether;
 
-    constructor() ERC20("TokenSaleToken","TST") Ownable(msg.sender){}
+    constructor() ERC20("PartialRefundToken","PFT") Ownable(msg.sender){}
+    
+    receive() external payable {}
 
     /**
      * @dev Creates new tokens to address calling the function. Checks if 1 ETH was sent and there are available tokens to mint.
@@ -38,7 +41,25 @@ contract ERC20WithTokenSale is ERC20, Ownable{
     /**
      * @dev Used strictly for testing, use case when minting naturally and using mintsale().
      */
-    function testMint(address to, uint256 amount) external onlyOwner {
+    function testMint(address to, uint256 amount) external {
         _mint(to, amount);
+    }
+
+    /**
+     * @dev Used strictly for testing, use case when minting naturally and using mintsale().
+     */
+    function sellBack(uint256 amount) external {
+        require(amount > 0, "Amount must be greater than 0");
+
+        uint256 etherToSend = amount * ETHER_PER_1000_TOKENS / (1000*1e18);
+        require(address(this).balance >= etherToSend, "Insufficient balance");
+
+        //uint256 allowance = allowance(from, address(this));
+        //require(allowance >= amount, "Not enough approved");
+        bool success = this.transferFrom(msg.sender, address(this), amount);
+        require(success, "Transfer failed");
+        
+        _burn(address(this), amount);
+        payable(msg.sender).transfer(etherToSend);
     }
 }

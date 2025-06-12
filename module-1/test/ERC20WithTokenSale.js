@@ -18,18 +18,18 @@ describe("ERC20WithTokenSale", function () {
         expect(balance).to.equal(ethers.parseUnits("1000", 18));
     });
 
-    it("Should reject token purchase if not exactly 1 ETH", async () => {
-        await expect(token.connect(user1).mintSale({ value: ethers.parseEther("0.5") })).to.be.revertedWith("Must send 1 ether for sale");
-
-        await expect(token.connect(user1).mintSale({ value: ethers.parseEther("2") })).to.be.revertedWith("Must send 1 ether for sale");
-    });
-
     it("Should reject token purchase if max supply exceeded", async () => {
-        // Mint max supply in a loop
-        for (let i = 0; i < 1000; i++) {
-            await token.connect(owner).mintSale({ value: ethers.parseEther("1") });
-        }
+        // Mint max supply
+        await token.connect(owner).mintSale({ value: ethers.parseEther("1000") });
+        
         await expect(token.connect(user1).mintSale({ value: ethers.parseEther("1") })).to.be.revertedWith("Max token supply reached.");
+    });
+    
+    it("Should mint 500 tokens for 0.5 ETH", async () => {
+        await token.connect(user1).mintSale({ value: ethers.parseEther("0.5") });
+
+        const balance = await token.balanceOf(user1.address);
+        expect(balance).to.equal(ethers.parseUnits("500", 18));
     });
 
     it("Should allow 999,000 test mint and then 1,000 via sale, but no more", async () => {
