@@ -4,7 +4,7 @@ pragma solidity ^0.8.28;
 
 /** 
  * @title ERC20WithTokenSale
- * @dev Allows users to buy tokens for 1000 tokens per 1 ETH.
+ * @dev Allows users to buy/sell tokens to the contract.
  */
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -21,7 +21,7 @@ contract ERC20WithPartialRefund is ERC20, Ownable{
     receive() external payable {}
 
     /**
-     * @dev Creates new tokens to address calling the function. Checks if 1 ETH was sent and there are available tokens to mint.
+     * @dev Creates new tokens to address calling the function. Checks if more than 0 ETH was sent and there are available tokens to mint.
      */
     function mintSale() external payable{
         uint256 tokensToMint = msg.value * TOKENS_PER_ETHER / 1 ether;
@@ -46,7 +46,8 @@ contract ERC20WithPartialRefund is ERC20, Ownable{
     }
 
     /**
-     * @dev Used strictly for testing, use case when minting naturally and using mintsale().
+     * @dev Sells back to user, and checks if contract is allowed to transfer tokens. 
+     * User must approve amount, prior to calling sellBack, so contract can transfer the same amount from the user.
      */
     function sellBack(uint256 amount) external {
         require(amount > 0, "Amount must be greater than 0");

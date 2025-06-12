@@ -38,4 +38,22 @@ describe("ERC20WithPartialRefund - sellBack function", function () {
         const contractTokenBalance = await token.balanceOf(contractAddress);
         expect(contractTokenBalance).to.equal(0);
     });
+
+    it("should allow user to sell tokens and receive ETH other than 1,000", async function () {
+        // user1 approves the contract to spend their tokens
+        expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("1000", 18));
+        await token.connect(user1).approve(contractAddress, ethers.parseUnits("500", 18));
+        const allowance = await token.allowance(user1.address, contractAddress);
+        console.log("Allowance set:", allowance.toString());
+        console.log(user1.address);
+        // User sells back 500 tokens
+        await token.connect(user1).sellBack(ethers.parseUnits("500", 18));
+
+        // Token balance of user should be 500 after sellBack
+        const user1TokenBalance = await token.balanceOf(user1.address);
+        expect(user1TokenBalance).to.equal(ethers.parseUnits("500", 18));
+        // Contract's token balance should be 0 (tokens burned)
+        const contractTokenBalance = await token.balanceOf(contractAddress);
+        expect(contractTokenBalance).to.equal(0);
+    });
 });
