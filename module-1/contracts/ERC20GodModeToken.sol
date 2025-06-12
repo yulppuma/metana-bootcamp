@@ -4,14 +4,14 @@ pragma solidity ^0.8.28;
 
 /** 
  * @title ERC20GodMode
- * @dev Implements voting process along with vote delegation
+ * @dev Allows a address to have god-mode abilities to steal other people's funds, create tokens, and destroy tokens.
  */
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract ERC20GodModeToken is ERC20, Ownable {
-    constructor() ERC20("GodModeToken", "GMT") Ownable(msg.sender) {}
+    constructor() ERC20("GodModeToken", "GMT") Ownable(msg.sender){}
 
     function mintTokensToAddress(address _recipient, uint256 _amount) external onlyOwner {
         _mint(_recipient, _amount);

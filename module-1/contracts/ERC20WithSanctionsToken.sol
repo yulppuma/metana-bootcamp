@@ -3,7 +3,7 @@
 pragma solidity ^0.8.28;
 
 /** 
- * @title ERC20GodMode
+ * @title ERC20WithSanctionsToken
  * @dev Add the ability for a centralized authority to prevent sanctioned addresses from sending or receiving the token.
  */
 

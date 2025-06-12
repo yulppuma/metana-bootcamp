@@ -33,7 +33,7 @@ describe("ERC20WithSanctionsToken", function () {
         ).to.be.revertedWith("Blacklisted address");
     });
 
-    it("Should allow owner to add/remove blacklist and authorities", async () => {
+    it("Should allow address part of the centralized authority to add/remove blacklist and authorities", async () => {
         // Add authority
         await token.connect(owner).addToCentralizedAuthority(user3.address);
         expect(await token.centralizedAuthority(user3.address)).to.be.true;
@@ -47,7 +47,7 @@ describe("ERC20WithSanctionsToken", function () {
         expect(await token.blacklist(user1.address)).to.be.false;
     });
 
-    it("Should revert if non-authority tries to blacklist", async () => {
+    it("Should revert if non-centralized authority tries to blacklist", async () => {
         await expect(token.connect(user1).addToBlacklist(user2.address)).to.be.revertedWith("Can't blacklist");
     });
 });
