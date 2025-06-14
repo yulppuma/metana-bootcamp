@@ -10,15 +10,13 @@ import "@openzeppelin/contracts/utils/Strings.sol";
  * @dev ERC721 token that can be minted for free from etherscan
  */
 
- contract FreeNft is ERC721{
+ contract FreeNFT is ERC721{
 
     using Strings for uint256;
 
      uint8 public constant MAX_TOTAL_SUPPLY = 10;
 
      uint8 public tokensMinted;
-
-     string public baseURL = "https://myfreenft.com/images/";
 
     constructor() ERC721("FreeNFT","FNFT"){}
 
@@ -28,9 +26,7 @@ import "@openzeppelin/contracts/utils/Strings.sol";
         tokensMinted++;
     }
 
-    function tokenURI(uint256 _tokenId) public view override returns (string memory){
-        address owner = _ownerOf(_tokenId);
-        require(owner != address(0), "Not valid");
-        return string(abi.encodePacked(baseURL, _tokenId.toString(), ".jpeg"));
+    function _baseURI() internal pure override returns (string memory){
+        return "ipfs://bafybeia2vaq3n2nypbdhwqtl4h2kltsphldoydomwjh2axqgumtvi3nhgy/";
     }
  }
