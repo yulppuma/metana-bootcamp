@@ -18,11 +18,12 @@ describe("ERC20WithPartialRefund - sellBack function", function () {
         await owner.sendTransaction({to: contractAddress,value: ethers.parseEther("10"),});
 
         // Mint 1000 tokens for user1
-        await token.connect(user1).testMint(user1.address, ethers.parseUnits("1000", 18));
+        await user1.sendTransaction({to: contractAddress, value: ethers.parseEther("1")});
     });
 
     it("should allow user to sell tokens and receive ETH", async function () {
         // user1 approves the contract to spend their tokens
+        console.log(await token.balanceOf(user1.address));
         expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("1000", 18));
         await token.connect(user1).approve(contractAddress, ethers.parseUnits("1000", 18));
         const allowance = await token.allowance(user1.address, contractAddress);
@@ -36,7 +37,7 @@ describe("ERC20WithPartialRefund - sellBack function", function () {
         expect(user1TokenBalance).to.equal(0);
         // Contract's token balance should be 0 (tokens burned)
         const contractTokenBalance = await token.balanceOf(contractAddress);
-        expect(contractTokenBalance).to.equal(0);
+        expect(contractTokenBalance).to.equal(ethers.parseUnits("1000", 18));
     });
 
     it("should allow user to sell tokens and receive ETH other than 1,000", async function () {
@@ -54,6 +55,27 @@ describe("ERC20WithPartialRefund - sellBack function", function () {
         expect(user1TokenBalance).to.equal(ethers.parseUnits("500", 18));
         // Contract's token balance should be 0 (tokens burned)
         const contractTokenBalance = await token.balanceOf(contractAddress);
-        expect(contractTokenBalance).to.equal(0);
+        expect(contractTokenBalance).to.equal(ethers.parseUnits("500", 18));
+    });
+
+    it("Should allow user to mint tokens by transfering any available tokens the contract holds and minting the remaining amount", async () => {
+        await token.connect(user1).mintSale({ value: ethers.parseEther("1") });
+
+        expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("2000", 18));
+
+        await token.connect(user1).approve(contractAddress, ethers.parseUnits("1000", 18));
+        const allowance = await token.allowance(user1.address, contractAddress);
+        await token.connect(user1).sellBack(ethers.parseUnits("1000", 18));
+        expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("1000", 18));
+        expect(await token.balanceOf(contractAddress)).to.equal(ethers.parseUnits("1000", 18));
+
+        const supplyBefore = await token.totalSupply();
+        console.log(supplyBefore);
+        expect(supplyBefore).to.equal(ethers.parseUnits("12000", 18));
+        await token.connect(user1).mintSale({ value: ethers.parseEther("1") });
+        expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("2000", 18));
+        expect(await token.balanceOf(contractAddress)).to.equal(0);
+        const finalSupply = await token.totalSupply();
+        expect(finalSupply).to.equal(ethers.parseUnits("12000", 18));
     });
 });
