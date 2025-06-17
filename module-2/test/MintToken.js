@@ -25,7 +25,7 @@ describe("MintToken", function () {
 
     it ("should allow user to mint an NFT if they have enough ERC20 tokens", async function (){
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
-        expect (await ERC721Token.balanceOf(addr2.address)).to.equal(0);
+        expect (await ERC721Token.balanceOf(addr1.address)).to.equal(0);
         await ERC20Token.connect(addr1).mint(ethers.parseUnits("1000", 18));
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(ethers.parseUnits("1000", 18));
         await ERC20Token.connect(addr1).approve(token.getAddress(), ethers.parseUnits("10", 18));
@@ -41,7 +41,7 @@ describe("MintToken", function () {
 
     it ("should allow users to mint an NFT if they have enough ERC20 tokens", async function (){
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
-        expect (await ERC721Token.balanceOf(addr2.address)).to.equal(0);
+        expect (await ERC20Token.balanceOf(addr2.address)).to.equal(0);
         //Addr1 mints ERC20 tokens.
         await ERC20Token.connect(addr1).mint(ethers.parseUnits("1000", 18));
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(ethers.parseUnits("1000", 18));

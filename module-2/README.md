@@ -1,13 +1,19 @@
-# Sample Hardhat Project
+# metana-bootcamp Module-1
+## Prerequisites
+### Before you begin, ensure you are able to run the following tools on your system:
+### Node.js & npm (Node.js v16+ recommended) (https://nodejs.org/en)
+### Git (https://git-scm.com/)
+### VS Code (https://code.visualstudio.com/)
+### Hardhat (installed via npm) (https://hardhat.org/)
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
+## Setup for Windows via VS Code terminal
+### 1. Clone the repository
+``` git clone git@github.com:yulppuma/metana-bootcamp.git```
+### 2. Install dependencies
+``` cd module-2```
 
-Try running some of the following tasks:
-
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.js
-```
+```npm install```
+### 3. Compile the contracts
+``` npx hardhat compile```
+### 4. Run Tests (this compiles the contracts in the background as well)
+``` npx hardhat test```

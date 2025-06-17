@@ -3,7 +3,6 @@
 pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
 
 /** 
  * @title MintERC721Token
@@ -16,6 +15,9 @@ contract MintERC721Token is ERC721 {
 
     constructor() ERC721("MintNFT", "MNFT"){}
 
+    /**
+     * @dev Mints MNFT token.
+     */
     function mintNFT(address minter) external{
         _safeMint(minter, nextTokenId);
         nextTokenId++;
