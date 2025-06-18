@@ -2,6 +2,7 @@
 
 pragma solidity 0.8.28;
 
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 /** 
@@ -9,14 +10,14 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  * @dev Allows user to mint SERC tokens.
  */
 
-contract StakeERC20Token is ERC20 {
+contract StakeERC20Token is ERC20, Ownable2Step {
 
-    constructor() ERC20("StakeERC20", "SERC"){}
+    constructor() ERC20("StakeERC20", "SERC") Ownable(msg.sender){}
 
     /**
      * @dev Mints SERC tokens.
      */
-    function mint(address to, uint256 amount) external{
+    function mint(address to, uint256 amount) external onlyOwner{
         _mint(to, amount);
     }
 }

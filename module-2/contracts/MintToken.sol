@@ -20,6 +20,10 @@ contract MintToken {
         nft = MintERC721Token(NFTAddress);
     }
 
+    function acceptNFTContractOwnership() external {
+        nft.acceptOwnership();
+    }
+
     /**
      * @dev Mints ERC721 token with ERC20 token as payment.
      */

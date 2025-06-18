@@ -13,10 +13,15 @@ contract MintERC20Token is ERC20 {
 
     constructor() ERC20("MintERC20", "MERC"){}
 
+    receive() external payable {
+        mint();
+    }
+
     /**
      * @dev Mints MERC token.
      */
-    function mint(uint256 amount) external{
-        _mint(msg.sender, amount);
+    function mint() public payable{
+        require(msg.value > 0, "No ETH was sent");
+        _mint(msg.sender, msg.value);
     }
 }

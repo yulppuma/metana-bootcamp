@@ -20,13 +20,26 @@ describe("MintToken", function () {
         token = await Token.deploy(ERC20Token.getAddress(), ERC721Token.getAddress());
         await token.waitForDeployment();
         contractAddress = await token.getAddress();
+        await ERC721Token.transferOwnership(contractAddress);
+        await token.acceptNFTContractOwnership();
+    });
 
+    it ("should allow user to mint an ERC20 token if they have send ETH", async function (){
+        expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
+        expect (await ERC721Token.balanceOf(addr1.address)).to.equal(0);
+        await addr1.sendTransaction({to: await ERC20Token.getAddress(), value:ethers.parseUnits("1000", 18)});
+        expect(await ERC20Token.balanceOf(addr1.address)).to.equal(ethers.parseUnits("1000", 18));
+    });
+    it ("should not allow user to mint an ERC20 token if they don't send ETH", async function (){
+        expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
+        expect (await ERC721Token.balanceOf(addr1.address)).to.equal(0);
+        await expect(ERC20Token.connect(addr1).mint()).to.be.revertedWith("No ETH was sent");
     });
 
     it ("should allow user to mint an NFT if they have enough ERC20 tokens", async function (){
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
         expect (await ERC721Token.balanceOf(addr1.address)).to.equal(0);
-        await ERC20Token.connect(addr1).mint(ethers.parseUnits("1000", 18));
+        await ERC20Token.connect(addr1).mint({value:ethers.parseUnits("1000", 18)});
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(ethers.parseUnits("1000", 18));
         await ERC20Token.connect(addr1).approve(token.getAddress(), ethers.parseUnits("10", 18));
         expect(await ERC20Token.allowance(addr1.address, contractAddress)).to.equal(ethers.parseUnits("10", 18));
@@ -43,15 +56,15 @@ describe("MintToken", function () {
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
         expect (await ERC20Token.balanceOf(addr2.address)).to.equal(0);
         //Addr1 mints ERC20 tokens.
-        await ERC20Token.connect(addr1).mint(ethers.parseUnits("1000", 18));
+        await ERC20Token.connect(addr1).mint({value:ethers.parseUnits("1000", 18)});
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(ethers.parseUnits("1000", 18));
         await ERC20Token.connect(addr1).approve(token.getAddress(), ethers.parseUnits("10", 18));
         expect(await ERC20Token.allowance(addr1.address, contractAddress)).to.equal(ethers.parseUnits("10", 18));
         //Addr2 mints ERC20 tokens.
-         await ERC20Token.connect(addr2).mint(ethers.parseUnits("1000", 18));
+         await ERC20Token.connect(addr2).mint({value:ethers.parseUnits("1000", 18)});
         expect(await ERC20Token.balanceOf(addr2.address)).to.equal(ethers.parseUnits("1000", 18));
         await ERC20Token.connect(addr2).approve(token.getAddress(), ethers.parseUnits("10", 18));
-        expect(await ERC20Token.allowance(addr2.address, contractAddress)).to.equal(ethers.parseUnits("10", 18))
+        expect(await ERC20Token.allowance(addr2.address, contractAddress)).to.equal(ethers.parseUnits("10", 18));
         //After the user approves the NFT price, they can mint an NFT.
         await token.connect(addr1).mintNFT();
         await token.connect(addr2).mintNFT();
@@ -64,6 +77,18 @@ describe("MintToken", function () {
         expect (await ERC721Token.ownerOf(1)).to.equal(addr2);
     });
 
+    it ("should not mint the NFT if the user directly tries to mint an NFT", async function (){
+        expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
+        expect (await ERC721Token.balanceOf(addr1.address)).to.equal(0);
+        await ERC20Token.connect(addr1).mint({value:ethers.parseUnits("1000", 18)});
+        expect(await ERC20Token.balanceOf(addr1.address)).to.equal(ethers.parseUnits("1000", 18));
+        await ERC20Token.connect(addr1).approve(token.getAddress(), ethers.parseUnits("10", 18));
+        expect(await ERC20Token.allowance(addr1.address, contractAddress)).to.equal(ethers.parseUnits("10", 18));
+        //After the user approves the NFT price, they can mint an NFT
+        await expect(ERC721Token.connect(addr1).mintNFT(addr1.address)).to.be.revertedWithCustomError(ERC721Token, "OwnableUnauthorizedAccount");
+        //Addr1 should own an NFT now.
+    });
+
     it ("should not mint the NFT if the user doesn't have enough ERC20 tokens", async function (){
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
         expect (await ERC721Token.balanceOf(addr2.address)).to.equal(0);
@@ -73,7 +98,7 @@ describe("MintToken", function () {
     it ("should not mint the NFT if the contract allowance is less than NFT mint cost", async function (){
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
         expect (await ERC721Token.balanceOf(addr2.address)).to.equal(0);
-        await ERC20Token.connect(addr1).mint(ethers.parseUnits("1000", 18));
+        await ERC20Token.connect(addr1).mint({value:ethers.parseUnits("1000", 18)});
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(ethers.parseUnits("1000", 18));
         //Approve only 9*1e18 ERC20 tokens.
         await ERC20Token.connect(addr1).approve(token.getAddress(), ethers.parseUnits("9", 18));
