@@ -14,13 +14,8 @@ contract ERC1155Token is ERC1155, Ownable2Step{
     uint8 public constant TOKEN_4 = 4;
     uint8 public constant TOKEN_5 = 5;
     uint8 public constant TOKEN_6 = 6;
-    //bafybeibjt6qiqzouiobmlaa65ryuozasmvhfvgqrasqtguwijfqnmdvtui
 
-    constructor() ERC1155("") Ownable(msg.sender){}
-
-    receive() external payable {
-        _mint(msg.sender, 0, msg.value, "");
-    }
+    constructor() ERC1155("ipfs://bafybeigrqt7nn3k6pfyt5tfn3fwjced2ne4j6axae4lvoks22v5w64abzm/{id}.json") Ownable(msg.sender){}
 
     function setURI(string memory newuri) external onlyOwner{
         _setURI(newuri);
@@ -30,15 +25,7 @@ contract ERC1155Token is ERC1155, Ownable2Step{
         _mint(to, id, value, data);
     }
 
-    function mintBatch(address to, uint256[] memory ids, uint256[] memory values, bytes memory data) external onlyOwner{
-        _mintBatch(to, ids, values, data);
-    }
-
     function burn(address from, uint256 id, uint256 value) external onlyOwner{
         _burn(from, id, value);
-    }
-
-    function burnBatch(address from, uint256[] memory ids, uint256[] memory values) external onlyOwner{
-        _burnBatch(from, ids, values);
     }
 }

@@ -12,82 +12,81 @@ contract ForgeERC1155Token {
     using Arrays for address[];
 
     uint8 public constant MINUTE_CD = 1 minutes;
-    mapping (address => uint256) lastMintTime;
+    mapping (address => uint256) public lastMintTime;
     ERC1155Token token;
 
     error CooldownActive(address user);
-    error InsufficientBalanceToken3to5(address user, uint256 amount, uint256 id1, uint256 id2);
-    error InsufficientBalanceToken6(address user, uint256 amount, uint256 id1, uint256 id2, uint256 id3);
+    error InsufficientBalanceToken3to5(address user, uint256 id1, uint256 id2);
+    error InsufficientBalanceToken6(address user, uint256 id1, uint256 id2, uint256 id3);
 
-    constructor(address payable tokenAddress){
+    constructor(address tokenAddress){
         token = ERC1155Token(tokenAddress);
     }
 
-    function mintERC1155(address to, uint256 id, uint256 value, bytes memory data) external{
-        uint256[] memory ids = new uint256[](1);
-        uint256[] memory values = new uint256[](1);
-        ids[0] = id;
-        values[0] = value;
-        _forge(to, ids, values);
-        token.mint(to, id, value, data);
+    function acceptERC1155TokenOwnership() external {
+        token.acceptOwnership();
     }
 
-    function mintERC1155Batch(address to, uint256[] memory ids, uint256[] memory values, bytes memory data) external{
-        _forge(to, ids, values);
-        token.mintBatch(to, ids, values, data);
+    function changeURI(string memory newuri) external{
+        token.setURI(newuri);
     }
 
-    function _forge(address to, uint256[] memory ids, uint256[] memory values) internal{
-        require(ids.length == values.length, "Invalid Array Length");
-        for (uint i = 0; i < ids.length; ++i){
-            if (ids[i] <= 2){
-                if (block.timestamp < lastMintTime[to] + MINUTE_CD) {
-                    revert CooldownActive(to);
-                }
-                lastMintTime[to] = block.timestamp;
+    function mintToken(uint256 id, bytes memory data) external{
+        _forge(msg.sender, id);
+        token.mint(msg.sender, id, 1, data);
+    }
+
+    function _forge(address to, uint256 id) internal{
+        uint256 balanceOf0 = token.balanceOf(to, 0);
+        uint256 balanceOf1 = token.balanceOf(to, 1);
+        uint256 balanceOf2 = token.balanceOf(to, 2);
+        if (id <= 2){
+            if (block.timestamp < lastMintTime[to] + MINUTE_CD) {
+                revert CooldownActive(to);
             }
-            else if (ids[i] == 3){
-                if (token.balanceOf(to, 0) < values[i] || token.balanceOf(to, 1) < values[i]){
-                    revert InsufficientBalanceToken3to5(to, values[i], 0, 1);
-                }
-                token.burnBatch(to, _makeUintArray(0, 1), _makeUintArray(values[i], values[i]));
+            lastMintTime[to] = block.timestamp;
+        }
+        else if (id == 3){
+            if (balanceOf0 < 1 || balanceOf1 < 1){
+                revert InsufficientBalanceToken3to5(to, 0, 1);
             }
-            else if (ids[i] == 4){
-                if (token.balanceOf(to, 1) < values[i] || token.balanceOf(to, 2) < values[i]){
-                    revert InsufficientBalanceToken3to5(to, values[i], 1, 2);
-                }
-                token.burnBatch(to, _makeUintArray(1, 2), _makeUintArray(values[i], values[i]));
+            token.burn(to, 0, 1);
+            token.burn(to, 1, 1);
+        }
+        else if (id == 4){
+            if (balanceOf1 < 1 || balanceOf2 < 1){
+                revert InsufficientBalanceToken3to5(to, 1, 2);
             }
-            else if (ids[i] == 5){
-                if (token.balanceOf(to, 0) < values[i] || token.balanceOf(to, 2) < values[i]){
-                    revert InsufficientBalanceToken3to5(to, values[i], 0, 2);
-                }
-                token.burnBatch(to, _makeUintArray(0, 2), _makeUintArray(values[i], values[i]));
+            token.burn(to, 1, 1);
+            token.burn(to, 2, 1);
+        }
+        else if (id == 5){
+            if (balanceOf0 < 1 || balanceOf2 < 1){
+                revert InsufficientBalanceToken3to5(to, 0, 2);
             }
-            else{
-                 if (token.balanceOf(to, 0) < values[i] || token.balanceOf(to, 1) < values[i] || token.balanceOf(to, 2) < values[i]){
-                    revert InsufficientBalanceToken6(to, values[i], 0, 1, 2);
-                }
-                uint256[] memory tokenIds = new uint256[](3);
-                tokenIds[0] = 0;
-                tokenIds[1] = 1;
-                tokenIds[2] = 2;
-                uint256[] memory amounts = new uint256[](3);
-                amounts[0] = values[i];
-                amounts[1] = values[i];
-                amounts[2] = values[i];
-                token.burnBatch(to, tokenIds, amounts);
+            token.burn(to, 0, 1);
+            token.burn(to, 2, 1);
+        }
+        else{
+                if (balanceOf0 < 1 || balanceOf1 < 1 || balanceOf2 < 1){
+                revert InsufficientBalanceToken6(to, 0, 1, 2);
             }
+            token.burn(to, 0, 1);
+            token.burn(to, 1, 1);
+            token.burn(to, 2, 1);
         }
     }
 
-    function _makeUintArray(uint256 a, uint256 b) internal pure returns (uint256[] memory arr){
-        arr = new uint256[](2);
-        arr[0] = a;
-        arr[1] = b;
+    function burnToken(uint256 id) external{
+        require(token.balanceOf(msg.sender, id) > 0, "Nothing to burn");
+        token.burn(msg.sender, id, 1);
     }
 
-    function tradeToken(address to, uint256 id, uint256 targetId, uint256 value, bytes memory data) external{
-        
+    function tradeToken(uint256 id, uint256 targetId) external{
+        require(id != targetId, "Trading for same token");
+        require(id <=2 && targetId <= 2, "Only Tokens[0-2] can be traded");
+        require(token.balanceOf(msg.sender, id) > 0, "Not enough to trade");
+        token.burn(msg.sender, id, 1);
+        token.mint(msg.sender, targetId, 1, "");
     }
 }
