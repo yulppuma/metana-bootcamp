@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { ForgeERC1155TokenProvider } from './context/ForgeERC1155TokenContext';
 
 import '@rainbow-me/rainbowkit/styles.css';
 
@@ -39,9 +40,11 @@ createRoot(document.getElementById('root')).render(
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider chains={chains}>
-          <App />
+          <ForgeERC1155TokenProvider>
+            <App />
+          </ForgeERC1155TokenProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
-  </StrictMode>,
+  </StrictMode>
 )
