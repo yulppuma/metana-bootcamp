@@ -7,36 +7,34 @@ const Wallet = () => {
     const shortenAddress = (addr) => addr.slice(0, 6) + '...' + addr.slice(-4);
     const isOnSepolia = chain?.id === 11155111;
     return (
-    <div className="flex flex-row w-full justify-between items-center">
-        <div className="w-full relative py-4 px-6">
+    <div className="flex flex-row w-full justify-between items-center bg-zinc-900 p-6 border-b border-zinc-700 relative">
         {!isConnected && (
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2">
+        <div className="absolute left-1/2 top-4 transform -translate-x-1/2">
             <ConnectButton />
-            </div>
-        )}
-        {isConnected && (
-            <div className="absolute top-4 left-4 text-sm font-mono text-gray-700">
-                <div className="flex items-center gap-2 px-3 py-1 rounded-xl border
-                 border-gray-300 bg-white hover:bg-gray-100 shadow-sm text-sm font-medium
-                 text-gray-800 transition">
-                    {shortenAddress(address)}
-                </div>
-            </div>
-        )}
-        {isConnected && (
-            <div className="absolute top-4 right-4">
-                <button
-                    onClick={openChainModal}
-                    className={`flex items-center gap-2 px-3 py-1 rounded-xl border text-sm font-medium shadow-sm transition
-                    ${isOnSepolia
-                        ? 'bg-green-100 border-green-300 text-green-800 hover:bg-green-200'
-                        : 'bg-red-100 border-red-300 text-red-800 hover:bg-red-200'}`}
-                >
-                    {isOnSepolia ? 'Sepolia' : 'Wrong Network: Click Here'}
-                </button>
-            </div>
-        )}
         </div>
+        )}
+        {isConnected && (
+        <div>
+            <div className="absolute top-4 left-4">
+            <div className="flex items-center gap-2 px-4 py-1 rounded-xl border border-zinc-700 bg-zinc-800 shadow-sm text-sm font-mono text-white" onClick={openAccountModal}>
+                {shortenAddress(address)}
+            </div>
+            </div>
+            <div className="absolute top-4 right-4">
+            <button
+                onClick={openChainModal}
+                className={`flex items-center gap-2 px-4 py-1 rounded-xl border text-sm font-medium shadow-sm transition
+                ${
+                    isOnSepolia
+                    ? 'bg-green-700 border-green-500 text-white hover:bg-green-600'
+                    : 'bg-red-700 border-red-500 text-white hover:bg-red-600'
+                }`}
+            >
+                {isOnSepolia ? 'Sepolia' : 'Wrong Network'}
+            </button>
+            </div>
+        </div>
+        )}
     </div>
     );
 }
