@@ -2,7 +2,6 @@ import React, { useEffect, useState} from 'react';
 import { ethers } from 'ethers';
 import { useAccount, useBalance, useChainId, useSwitchChain } from 'wagmi';
 import { useConnectModal, useAccountModal, useChainModal} from '@rainbow-me/rainbowkit';
-import { sepolia } from 'wagmi/chains';
 import { forgeContractABI, tokenContractABI, forgeContractAddress, tokenContractAddress } from '../utils/constants';
 
 export const ForgeERC1155TokenContext = React.createContext();
@@ -23,7 +22,6 @@ export const ForgeERC1155TokenProvider = ({ children }) => {
     const [tradeTargets, setTradeTargets] = useState({});
     const chainId = useChainId();
     const { chains, switchChain } = useSwitchChain();
-    const { openConnectModal } = useConnectModal();
     const { openAccountModal } = useAccountModal();
     const { openChainModal } = useChainModal();
     const { address, isConnected, chain } = useAccount();
@@ -35,7 +33,7 @@ export const ForgeERC1155TokenProvider = ({ children }) => {
             const {ForgeERC1155TokenContract} = await getEthereumContract();
             const tx = await ForgeERC1155TokenContract.mintToken(tokenId, '0x');
             await tx.wait();
-            await getBalance(tokenId);
+            await getAllBalance();
         }
         catch (error){
             console.log(error);
@@ -98,10 +96,10 @@ export const ForgeERC1155TokenProvider = ({ children }) => {
 
 
     useEffect(() => {
-        if (isConnected){
+        if (isConnected && chain?.id==11155111){
             getAllBalance();
         }
-    }, []);
+    }, [isConnected, chain?.id]);
     return (
         <ForgeERC1155TokenContext.Provider value = {{address, isConnected, chains, chain, switchChain, chainId, openAccountModal, openChainModal, mintToken, burnToken,
             tradeToken, getAllBalance, balances, tradeTargets, setTradeTargets, data, isError, isLoading, error}}>

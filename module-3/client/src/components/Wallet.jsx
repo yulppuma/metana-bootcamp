@@ -3,7 +3,7 @@ import { ForgeERC1155TokenContext } from '../context/ForgeERC1155TokenContext';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 const Wallet = () => {
 
-    const {isConnected, address, chain, chains, chainId, switchChain, openAccountModal, openChainModal} = useContext(ForgeERC1155TokenContext);
+    const {isConnected, address, chain, openAccountModal, openChainModal} = useContext(ForgeERC1155TokenContext);
     const shortenAddress = (addr) => addr.slice(0, 6) + '...' + addr.slice(-4);
     const isOnSepolia = chain?.id === 11155111;
     return (
@@ -16,7 +16,7 @@ const Wallet = () => {
         {isConnected && (
         <div>
             <div className="absolute top-4 left-4">
-            <div className="flex items-center gap-2 px-4 py-1 rounded-xl border border-zinc-700 bg-zinc-800 shadow-sm text-sm font-mono text-white" onClick={openAccountModal}>
+            <div className="flex items-center gap-2 px-4 py-1 rounded-xl border border-zinc-700 bg-zinc-800 shadow-sm text-sm font-mono text-white cursor-pointer" onClick={openAccountModal}>
                 {shortenAddress(address)}
             </div>
             </div>
@@ -30,7 +30,7 @@ const Wallet = () => {
                     : 'bg-red-700 border-red-500 text-white hover:bg-red-600'
                 }`}
             >
-                {isOnSepolia ? 'Sepolia' : 'Wrong Network'}
+                {isOnSepolia ? 'Sepolia' : 'Wrong Network: Click Here'}
             </button>
             </div>
         </div>
