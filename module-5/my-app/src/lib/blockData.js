@@ -11,6 +11,8 @@ export function blockData() {
 
   useEffect(() => {
     async function handleNewBlock(blockNumber) {
+      console.log("A new block has been mined.");
+      await new Promise(resolve => setTimeout(resolve, 1000));
       try {
         const block = await alchemy.core.getBlock(blockNumber);
         const baseFee = block.baseFeePerGas?.toString() || '0';
@@ -25,15 +27,16 @@ export function blockData() {
             category: ["erc20"],
         });
 
-        /*const totalVolume = transfers.transfers.reduce((sum, transfer) => {
-            console.log("ERC20 T", transfer);
-            const valueAsString = (transfer?.value || '0').toString();
-            const value = ethers.parseUnits(valueAsString, 6);
-            const newValue = BigInt(valueAsString);
-            
-            return sum + newValue;
-        }, 0n);*/
-
+        console.log(transfers.transfers);
+        let totalVolume = 0;
+        for(let i = 0; i < transfers.transfers.length; i++){
+          const value = Number(ethers.parseUnits(transfers.transfers[i].value.toString(), 6));
+          totalVolume+=value;
+          console.log("New total: " + ethers.formatUnits(totalVolume, 6));
+        }
+        console.log(totalVolume);
+        const totalVolumeFormatted = ethers.formatUnits(totalVolume, 6);
+        console.log("formmatted FINAL totla: " + totalVolumeFormatted);
         const blockData = {
           number: blockNumber,
           baseFee: ethers.formatUnits(baseFee, 'gwei'),
