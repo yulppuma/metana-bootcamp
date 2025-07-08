@@ -15,6 +15,7 @@ contract ERC20WithPartialRefund is ERC20, Ownable {
     uint256 constant TOKENS_PER_ETHER = 1000 * 1e18;
     uint256 constant ETHER_PER_1000_TOKENS = 0.5 ether;
 
+
     constructor() ERC20("PartialRefundToken", "PFT") Ownable(msg.sender) {}
 
     receive() external payable {
@@ -41,6 +42,7 @@ contract ERC20WithPartialRefund is ERC20, Ownable {
         }
     }
 
+
     /**
      * @dev Withdraws specific amount from the contract to the owner. Checks if available balance.
      */
@@ -62,7 +64,6 @@ contract ERC20WithPartialRefund is ERC20, Ownable {
         //uint256 allowance = allowance(from, address(this));
         //require(allowance >= amount, "Not enough approved");
         bool success = this.transferFrom(msg.sender, address(this), amount);
-
         payable(msg.sender).transfer(etherToSend);
     }
     function _update(address from, address to, uint256 value) internal override{
@@ -71,3 +72,13 @@ contract ERC20WithPartialRefund is ERC20, Ownable {
     }
     
 }
+        require(success, "Transfer failed");
+        payable(msg.sender).transfer(etherToSend);
+    }
+
+    function _update(address from, address to, uint256 value) internal override{
+        require(value > 0, "Must send more than 0");
+        require(totalSupply() + (value) <= MAX_TOTAL_SUPPLY, "Max token supply reached.");
+        super._update(from, to, value);
+    }
+} 
