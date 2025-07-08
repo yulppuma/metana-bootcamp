@@ -53,7 +53,6 @@ export function blockData() {
     }
 
     async function handleNewBlock(blockNumber) {
-      console.log("A new block has been mined.");
       await new Promise(resolve => setTimeout(resolve, 1000));
       try {
         const block = await alchemy.core.getBlock(blockNumber);
