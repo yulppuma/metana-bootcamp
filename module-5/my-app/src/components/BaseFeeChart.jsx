@@ -1,16 +1,7 @@
 'use client';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid} from 'recharts';
 
 export default function BaseFeeChart({ data }) {
-    const ticks = [0.5, 0.6, 0.7, 0.8, 0.9, 1];
   return (
     <div className="w-full h-80">
       <ResponsiveContainer width="100%" height="100%">

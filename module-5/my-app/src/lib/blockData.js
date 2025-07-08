@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from 'react';
-import { alchemy, alchemyWs } from './alchemyClient';
+import { alchemy } from './alchemyClient';
 import { ethers } from 'ethers';
 
 const ERC20_TOKEN_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // USDT (change this)
