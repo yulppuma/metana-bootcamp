@@ -8,9 +8,9 @@ pragma solidity ^0.8.28;
  */
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
-contract ERC20GodModeToken is ERC20, Ownable {
+contract ERC20GodModeToken is ERC20, Ownable2Step {
     constructor() ERC20("GodModeToken", "GMT") Ownable(msg.sender) {}
 
     /**

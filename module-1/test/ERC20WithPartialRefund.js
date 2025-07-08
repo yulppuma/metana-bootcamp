@@ -18,24 +18,27 @@ describe("ERC20WithPartialRefund - sellBack function", function () {
         await owner.sendTransaction({to: contractAddress,value: ethers.parseEther("10"),});
 
         // Mint 1000 tokens for user1
-        await token.connect(user1).testMint(user1.address, ethers.parseUnits("1000", 18));
+        //await token.connect(user1).testMint(user1.address, ethers.parseUnits("1000", 18));
     });
     it("should mint tokens when ETH is sent", async () => {
         const ethSent = ethers.parseEther("1");
         await token.connect(user1).mintSale({ value: ethSent });
         const userBalance = await token.balanceOf(user1.address);
-        expect(userBalance).to.equal(ethers.parseUnits("2000", 18)); // 1000 tokens
+        expect(userBalance).to.equal(ethers.parseUnits("1000", 18)); // 1000 tokens
     });
     it("should revert if amount is not greater than 0", async () => {
-        await expect(token.connect(user1).mintSale({ value: ethers.parseEther("0") })).to.be.revertedWith("Must send more than 0");
+        await expect(token.connect(user1).mintSale({ value: ethers.parseEther("0") })).to.be.revertedWith("No ETH was sent");
     });
     it("should revert if max tokens will be minted", async () => {
         const ethSent = ethers.parseEther("9998");
-        console.log(await ethers.provider.getBalance(user1.address));
         await expect(token.connect(user1).mintSale({ value: ethSent })).to.be.revertedWith("Max token supply reached.");
     });
     it("should allow user to sell tokens and receive ETH", async function () {
         // user1 approves the contract to spend their tokens
+        const ethSent = ethers.parseEther("1");
+        await token.connect(user1).mintSale({ value: ethSent });
+        const userBalance = await token.balanceOf(user1.address);
+        expect(userBalance).to.equal(ethers.parseUnits("1000", 18))
         expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("1000", 18));
         await token.connect(user1).approve(contractAddress, ethers.parseUnits("1000", 18));
         const allowance = await token.allowance(user1.address, contractAddress);
@@ -49,10 +52,14 @@ describe("ERC20WithPartialRefund - sellBack function", function () {
         expect(user1TokenBalance).to.equal(0);
         // Contract's token balance should be 0 (tokens burned)
         const contractTokenBalance = await token.balanceOf(contractAddress);
-        expect(contractTokenBalance).to.equal(0);
+        expect(contractTokenBalance).to.equal(ethers.parseUnits("1000", 18));
     });
     it("should allow user to sell tokens and receive ETH other than 1,000", async function () {
         // user1 approves the contract to spend their tokens
+        const ethSent = ethers.parseEther("1");
+        await token.connect(user1).mintSale({ value: ethSent });
+        const userBalance = await token.balanceOf(user1.address);
+        expect(userBalance).to.equal(ethers.parseUnits("1000", 18))
         expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("1000", 18));
         await token.connect(user1).approve(contractAddress, ethers.parseUnits("500", 18));
         const allowance = await token.allowance(user1.address, contractAddress);
@@ -66,7 +73,7 @@ describe("ERC20WithPartialRefund - sellBack function", function () {
         expect(user1TokenBalance).to.equal(ethers.parseUnits("500", 18));
         // Contract's token balance should be 0 (tokens burned)
         const contractTokenBalance = await token.balanceOf(contractAddress);
-        expect(contractTokenBalance).to.equal(0);
+        expect(contractTokenBalance).to.equal(ethers.parseUnits("500", 18));
     });
     it("should revert if amount is greater than contract balance", async function () {
         await expect(token.withdraw(ethers.parseEther("100"))).to.be.revertedWith("Insufficient balance"); 
@@ -75,22 +82,34 @@ describe("ERC20WithPartialRefund - sellBack function", function () {
         await expect(token.connect(user1).withdraw(ethers.parseEther("100"))).to.be.revertedWithCustomError(token,"OwnableUnauthorizedAccount");; 
     });
     it("should revert if amount is not greater than 0", async function () {
-        // user1 approves the contract to spend their tokens
-        expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("1000", 18));
-        await token.connect(user1).approve(contractAddress, ethers.parseUnits("500", 18));
-        const allowance = await token.allowance(user1.address, contractAddress);
-        console.log("Allowance set:", allowance.toString());
-        console.log(user1.address);
-        // User sells back 500 tokens
         await expect(token.connect(user1).sellBack(0)).to.be.revertedWith("Amount must be greater than 0");
     });
     it("should revert if balance is not greater than ether to send", async function () {
         // user1 approves the contract to spend their tokens
-        expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("1000", 18));
         await token.withdraw(ethers.parseEther("10")); // sends 1 ETH to the owner
         await token.connect(user1).approve(contractAddress, ethers.parseUnits("1000", 18));
         const allowance = await token.allowance(user1.address, contractAddress);
         // User sells back 500 tokens
         await expect(token.connect(user1).sellBack(ethers.parseUnits("1000", 18))).to.be.revertedWith("Insufficient balance");
+    });
+    it("Should allow user to mint tokens by transfering any available tokens the contract holds and minting the remaining amount", async () => {
+        await token.connect(user1).mintSale({ value: ethers.parseEther("2") });
+
+        expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("2000", 18));
+
+        await token.connect(user1).approve(contractAddress, ethers.parseUnits("1000", 18));
+        const allowance = await token.allowance(user1.address, contractAddress);
+        await token.connect(user1).sellBack(ethers.parseUnits("1000", 18));
+        expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("1000", 18));
+        expect(await token.balanceOf(contractAddress)).to.equal(ethers.parseUnits("1000", 18));
+
+        const supplyBefore = await token.totalSupply();
+        console.log(supplyBefore);
+        expect(supplyBefore).to.equal(ethers.parseUnits("12000", 18));
+        await token.connect(user1).mintSale({ value: ethers.parseEther("1") });
+        expect(await token.balanceOf(user1.address)).to.equal(ethers.parseUnits("2000", 18));
+        expect(await token.balanceOf(contractAddress)).to.equal(0);
+        const finalSupply = await token.totalSupply();
+        expect(finalSupply).to.equal(ethers.parseUnits("12000", 18));
     });
 });
