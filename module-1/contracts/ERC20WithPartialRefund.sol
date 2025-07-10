@@ -15,24 +15,34 @@ contract ERC20WithPartialRefund is ERC20, Ownable {
     uint256 constant TOKENS_PER_ETHER = 1000 * 1e18;
     uint256 constant ETHER_PER_1000_TOKENS = 0.5 ether;
 
-    constructor() ERC20("PartialRefundToken", "PFT") Ownable(msg.sender) {}
 
-    receive() external payable {}
+    constructor() ERC20("PartialRefundToken","PFT") Ownable(msg.sender){}
+    
+    receive() external payable {
+        mintSale();
+    }
 
     /**
      * @dev Creates new tokens to address calling the function. Checks if more than 0 ETH was 
             sent and there are available tokens to mint.
      */
-    function mintSale() external payable {
-        uint256 tokensToMint = (msg.value * TOKENS_PER_ETHER) / 1 ether;
-        require(msg.value > 0, "Must send more than 0");
-        require(
-            totalSupply() + (tokensToMint) <= MAX_TOTAL_SUPPLY,
-            "Max token supply reached."
-        );
+    function mintSale() public payable{
+        require(msg.value > 0, "No ETH was sent");
+        uint256 tokensToMint = msg.value * TOKENS_PER_ETHER / 1 ether;
+        uint256 contractBalance = balanceOf(address(this));
 
-        _mint(msg.sender, (tokensToMint));
+        if(contractBalance == 0){
+            _mint(msg.sender, tokensToMint);
+        }
+        else if (contractBalance >= tokensToMint){
+            this.transfer(msg.sender, tokensToMint);
+        }
+        else{
+            this.transfer(msg.sender, contractBalance);
+            _mint(msg.sender, tokensToMint - contractBalance);
+        }
     }
+
 
     /**
      * @dev Withdraws specific amount from the contract to the owner. Checks if available balance.
@@ -40,12 +50,6 @@ contract ERC20WithPartialRefund is ERC20, Ownable {
     function withdraw(uint256 amount) external onlyOwner {
         require(amount <= address(this).balance, "Insufficient balance");
         payable(owner()).transfer(amount);
-    }
-    /**
-     * @dev Used strictly for testing, use case when minting naturally and using mintsale().
-     */
-    function testMint(address to, uint256 amount) external {
-        _mint(to, amount);
     }
 
     /**
@@ -62,8 +66,12 @@ contract ERC20WithPartialRefund is ERC20, Ownable {
         //require(allowance >= amount, "Not enough approved");
         bool success = this.transferFrom(msg.sender, address(this), amount);
         require(success, "Transfer failed");
-
-        _burn(address(this), amount);
         payable(msg.sender).transfer(etherToSend);
+    }
+
+    function _update(address from, address to, uint256 value) internal override{
+        require(value > 0, "Must send more than 0");
+        require(totalSupply() + (value) <= MAX_TOTAL_SUPPLY, "Max token supply reached.");
+        super._update(from, to, value);
     }
 }
