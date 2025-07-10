@@ -4,6 +4,8 @@ import { alchemy } from './alchemyClient';
 import { ethers } from 'ethers';
 
 const ERC20_TOKEN_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'; // USDT (change this)
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'; //transfer event
+const USDT_DECIMALS = 6;
 
 export function blockData() {
   const [latestBlocks, setLatestBlocks] = useState([]);
@@ -28,21 +30,25 @@ export function blockData() {
             category: ['erc20'],
           });
 
-          let totalVolume = 0;
-          for (let j = 0; j < transfers.transfers.length; j++) {
-            const value = Number(ethers.parseUnits(transfers.transfers[j].value.toString(), 6));
-            totalVolume += value;
+          const transferLogs = await alchemy.core.getLogs({
+            fromBlock: ethers.toBeHex(blockNumber),
+            toBlock: ethers.toBeHex(blockNumber),
+            address: [ERC20_TOKEN_ADDRESS],
+            topics: [TRANSFER_TOPIC],
+          });
+          let transferVolume = 0n;
+          for (let j = 0; j < transferLogs.length; j++) {
+            const val = BigInt(transferLogs[j].data);
+            transferVolume+=val;
           }
-
-          const totalVolumeFormatted = ethers.formatUnits(totalVolume, 6);
-
+          const transferVolumeFormatted = ethers.formatUnits(transferVolume, USDT_DECIMALS);
           blocks.push({
             number: blockNumber,
             baseFee: ethers.formatUnits(baseFee, 'gwei'),
             gasUsed,
             gasLimit,
             gasUsageRatio: Number(((gasUsed / gasLimit) * 100).toFixed(2)),
-            transferVolume: totalVolumeFormatted,
+            transferVolume: transferVolumeFormatted,
             timestamp: block.timestamp,
           });
         }
@@ -60,26 +66,26 @@ export function blockData() {
         const gasUsed = Number(block.gasUsed);
         const gasLimit = Number(block.gasLimit);
 
-        // Fetch ERC20 token transfers for this block
-        let transfers = await alchemy.core.getAssetTransfers({
-            fromBlock: `0x${blockNumber.toString(16)}`,
-            toBlock: `0x${blockNumber.toString(16)}`,
-            contractAddresses: [ERC20_TOKEN_ADDRESS],
-            category: ["erc20"],
-        });
-        let totalVolume = 0;
-        for(let i = 0; i < transfers.transfers.length; i++){
-          const value = Number(ethers.parseUnits(transfers.transfers[i].value.toString(), 6));
-          totalVolume+=value;
+        const transferLogs = await alchemy.core.getLogs({
+            fromBlock: ethers.toBeHex(blockNumber),
+            toBlock: ethers.toBeHex(blockNumber),
+            address: [ERC20_TOKEN_ADDRESS],
+            topics: [TRANSFER_TOPIC],
+          });
+
+        let transferVolume = 0n;
+        for(let i = 0; i < transferLogs.length; i++){
+          const val = BigInt(transferLogs[i].data);
+          transferVolume+=val;
         }
-        const totalVolumeFormatted = ethers.formatUnits(totalVolume, 6);
+        const transferVolumeFormatted = ethers.formatUnits(transferVolume, USDT_DECIMALS);
         const blockData = {
           number: blockNumber,
           baseFee: ethers.formatUnits(baseFee, 'gwei'),
           gasUsed,
           gasLimit,
           gasUsageRatio: Number(((gasUsed / gasLimit) * 100).toFixed(2)),
-          transferVolume: totalVolumeFormatted,
+          transferVolume: transferVolumeFormatted,
           timestamp: block.timestamp,
         };
 

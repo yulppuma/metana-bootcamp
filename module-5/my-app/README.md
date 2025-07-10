@@ -15,3 +15,8 @@
 ```pnpm install```
 ### 3. Start the development server
 ``` pnpm dev```
+
+### Base Fee vs Gas Usage %
+While plotting the base fee of each block, and the gas used over gas limit as a percentage, the relationship they have is almost mirrored.
+While one increases, the other decreases vice versa. To put it into perspective, when gas used is closer to the gas limit or rather when 
+the gas usage percentage is high, base fee was low. This also implies that the following block will have a higher base fee.
