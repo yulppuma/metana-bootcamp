@@ -1,3 +1,4 @@
+require("@nomiclabs/hardhat-solhint");
 require("@nomicfoundation/hardhat-toolbox");
 
 /** @type import('hardhat/config').HardhatUserConfig */

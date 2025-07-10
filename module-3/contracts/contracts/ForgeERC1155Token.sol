@@ -13,7 +13,7 @@ contract ForgeERC1155Token {
 
     uint8 public constant MINUTE_CD = 1 minutes;
     mapping(address => uint256) public lastMintTime;
-    ERC1155Token token;
+    ERC1155Token immutable token;
 
     error CooldownActive(address user);
     error InsufficientBalanceToken3to5(address user, uint256 id1, uint256 id2);
