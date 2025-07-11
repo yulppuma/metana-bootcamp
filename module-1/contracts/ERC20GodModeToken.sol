@@ -12,7 +12,7 @@ import "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 
 contract ERC20GodModeToken is ERC20, Ownable2Step {
-    constructor() ERC20("GodModeToken", "GMT") Ownable(msg.sender){}
+    constructor() ERC20("GodModeToken", "GMT") Ownable(msg.sender) {}
 
 
     /**
