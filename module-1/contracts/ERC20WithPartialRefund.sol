@@ -81,4 +81,5 @@ contract ERC20WithPartialRefund is ERC20, Ownable {
         require(totalSupply() + (value) <= MAX_TOTAL_SUPPLY, "Max token supply reached.");
         super._update(from, to, value);
     }
+
 } 
