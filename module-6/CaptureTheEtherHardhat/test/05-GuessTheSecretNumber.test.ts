@@ -33,7 +33,8 @@ describe('GuessTheSecretNumberChallenge', () => {
         break;
       }
     }
-    await target.guess(myGuess, {value: utils.parseEther('1')});
+    let guessTx = await target.guess(myGuess, {value: utils.parseEther('1')});
+    await guessTx.wait();
     expect(await target.isComplete()).to.equal(true);
   });
 });

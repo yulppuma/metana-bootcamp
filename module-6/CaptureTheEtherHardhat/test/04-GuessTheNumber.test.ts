@@ -25,7 +25,8 @@ describe('GuessTheNumberChallenge', () => {
 
   it('exploit', async () => {
     //Since we can see the contract, we know the answer is 42
-    await target.guess(42, {value: utils.parseEther('1')});
+    let guessTx = await target.guess(42, {value: utils.parseEther('1')});
+    await guessTx.wait();
 
     expect(await provider.getBalance(target.address)).to.equal(0);
   });

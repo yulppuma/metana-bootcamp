@@ -27,8 +27,8 @@ describe('PredictTheBlockHashChallenge', () => {
     //Lock in our 'guess'
     const myGuessTx = await target.lockInGuess("0x0000000000000000000000000000000000000000000000000000000000000000",
       {value: utils.parseEther('1'),});
-    const receipt = await myGuessTx.wait();
-    //Wait for 256 blocks to be mined after myGuessTx.blockNumber+1
+    await myGuessTx.wait();
+    //Wait for 256 blocks to be mined after myGuessTx.blockNumber+1 since it will return 0
     for(let i=0; i <= 256; i++){
       await provider.send("evm_mine", []);
     }

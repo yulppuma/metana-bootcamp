@@ -29,9 +29,9 @@ contract AttackTokenBankChallenge{
         attack();
     }
 
-    /*  This exposes the re-entrancy vulnerability since the amount of tokens 
-        isn't updated withdraw can continously be called until there are no
-        tokens left to withdraw.
+    /*  This exposes the re-entrancy vulnerability since transfer is called
+        and the amount of tokens isn't updated until after, withdraw can continously be 
+        called until there are no tokens left to withdraw.
     */
     function attack() public{
         uint256 myBalance = tokenBankChallenge.balanceOf(address(this));

