@@ -11,6 +11,6 @@ contract AddressHacks{
 
     function someFunction() public pure returns(bool){
         //Malicious code
-        return true;
+        
     }
 }
