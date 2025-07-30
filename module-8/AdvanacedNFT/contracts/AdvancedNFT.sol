@@ -42,7 +42,7 @@ contract AdvancedNFT is ERC721, Ownable2Step {
 
     struct CommitDetails {
         bytes32 commit;
-        uint256 commitBlock;
+        uint64 commitBlock;
         bool revealed;
     }
 
@@ -58,14 +58,48 @@ contract AdvancedNFT is ERC721, Ownable2Step {
     function mint() public {
         
     }
-
+    /**
+    * Simple getHash function for user to submit their commit.
+     */
+    function getHash(bytes32 data) public view returns (bytes32){
+        return keccak256(abi.encodePacked(msg.sender, data));
+    }
+    
+    /**
+    * User must commit their random 'answer' before minting.
+    * Setup for allocating nft token id randomly.
+     */
     function commit(bytes32 secret) public{
         commitments[msg.sender].commit = secret;
-        commitments[msg.sender].commitBlock = block.number;
+        commitments[msg.sender].commitBlock = uint64(block.number);
     }
 
-    function reveal(bytes32 secret) public{
+    /**
+    * After 10 blocks, users can reveal their answer
+     */
+    function reveal(bytes32 revealHash) public{
+        CommitDetails memory userCommitDetails = commitments[msg.sender];
+        require(!userCommitDetails.revealed, "Already revealed");
+        require(uint64(block.number) > userCommitDetails.commitBlock + 10, "Too early for reveal");
+        require(uint64(block.number) <= userCommitDetails.commitBlock + 250, "Too late for reveal");
+        require(getHash(revealHash) == userCommitDetails.commit, "Incorrect secret");
+        
+        bytes32 blockhash = blockhash(userCommitDetails.commitBlock);
+        uint256 myNFTID = uint256 (keccak256(abi.encodePacked(blockHash, revealHash)))%TOTAL_SUPPLY;
 
+        myNFTID = avoidCollision(myNFTID);
+
+        commitments[msg.sender].revealed = true;
+
+    }
+
+    /**
+    * In the case where the NFT id is already taken.
+    * The next available NFT id will be allocated to user
+    * and so on.
+     */
+    function avoidCollision(uint256 tokenId) internal returns(uint256){
+        
     }
 
     //Verify leaf
