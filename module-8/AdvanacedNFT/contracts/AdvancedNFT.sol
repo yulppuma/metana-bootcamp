@@ -10,7 +10,7 @@ import "@openzeppelin/contracts/utils/Multicall.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 
-contract AdvancedNFT is ERC721, Ownable2Step {
+contract AdvancedNFT is ERC721, Ownable2Step, Multicall {
     using BitMaps for BitMaps.BitMap;
     using Strings for uint256;
 
@@ -26,7 +26,6 @@ contract AdvancedNFT is ERC721, Ownable2Step {
 
     //Merkle Tree and Airdrop Tracking
     bytes32 public immutable merkleRoot;
-    mapping(address => bool) whitelistHasMinted;
     BitMaps.BitMap private bitHasMinted;
 
     //NFT metrics
@@ -39,7 +38,7 @@ contract AdvancedNFT is ERC721, Ownable2Step {
     uint256 public constant ANFT_PRICE = 0.1 ether;
 
     //Pull pattern fund withdrawls
-    mapping(address => uint256) public pendingWithdrawals;
+    mapping(address => uint256) public withdrawalAmount;
 
     struct CommitDetails {
         bytes32 commit;
@@ -56,26 +55,45 @@ contract AdvancedNFT is ERC721, Ownable2Step {
         _;
     }
 
-    function publicSaleMint(uint256 index, bytes32 revealHash) public payable atStage(Stages.PublicSale) {
+    modifier mintChecks(uint256 index){
+        require(tokensMinted < TOTAL_SUPPLY, "All NFTs have been minted");
         require(msg.value == ANFT_PRICE, "Not enough ether");
         require (!BitMaps.get(bitHasMinted, index), "Already claimed");
+        _;
+    }
+
+
+    /**
+    * Public sale mint checks that the current state is in PublicSale.
+     */
+    function publicSaleMint(uint256 index, bytes32 revealHash) public payable atStage(Stages.PublicSale) mintChecks(index){
         mint(index, revealHash);
     }
 
-    function preSaleMint(bytes32[] calldata proof, uint256 index, bytes32 revealHash) public payable atStage(Stages.Presale){
-        require(msg.value == ANFT_PRICE, "Not enough ether");
-        require (!BitMaps.get(bitHasMinted, index), "Already claimed");
+    /**
+    * Presale mint function checks that the current state is in Presale,
+    * and the address calling the function is whitelisted.
+     */
+    function preSaleMint(bytes32[] calldata proof, uint256 index, bytes32 revealHash) public payable atStage(Stages.Presale) mintChecks(index){
         require(isWhitelisted(proof, msg.sender, index), "Not whitelisted");
         mint(index, revealHash);
     }
 
+    /**
+    * General mint function, after all the checks are made
+    * whether the mint is in presale or public sale.
+     */
     function mint (uint256 index, bytes32 revealHash) internal {
         uint256 tokenId = reveal(revealHash);
         BitMaps.setTo(bitHasMinted, index, true);
         _safeMint(msg.sender, tokenId);
+        tokensMinted++;
+        if (tokensMinted >= TOTAL_SUPPLY) stage = Stages.SoldOut;
     }
 
-    //Verify leaf
+    /**
+    * Checks if the address is whitelisted.
+     */
     function isWhitelisted(bytes32[] calldata proof, address userAddress, uint256 bitIndex) internal view returns (bool){
         bytes32 leaf = keccak256(abi.encodePacked(userAddress, bitIndex));
         return MerkleProof.verify(proof, merkleRoot, leaf);
@@ -123,7 +141,39 @@ contract AdvancedNFT is ERC721, Ownable2Step {
         revert("No available NFTs");
     }
 
-    function nextStage() internal{
+    /**
+    * Designated address (owner) will pull the funds from contract
+    * to corresponding receiver.
+     */
+    function pullFunds(address[] calldata receivers, uint256[] calldata amounts) public onlyOwner(){
+        uint256 receiverCount = receivers.length;
+        uint256 amountCount = amounts.length;
+        uint256 totalAmount;
+        require (amountCount > 0, "No amount/contributors");
+        require(receiverCount == amountCount, "Length mismatch");
+        for(uint256 i; i < amountCount; i++){
+            totalAmount+=amounts[i];
+        }
+        require(address(this).balance >= totalAmount, "Insufficient balance");
+
+        for (uint256 i; i < receiverCount; i++){
+            withdrawalAmount[receivers[i]]+= amounts[i];
+        }
+    }
+
+    function withdrawFunds() public{
+        uint256 amount = withdrawalAmount[msg.sender];
+        require (amount > 0, "Nothing to withdraw");
+        require(address(this).balance >= amount, "Insufficient balance");
+        withdrawalAmount[msg.sender] = 0;
+        payable(msg.sender).transfer(amount);
+    }
+
+    /**
+    * Move state to the next stage, which only
+    * owner can call.
+     */
+    function nextStage() public onlyOwner(){
         stage = Stages(uint(stage) + 1);
     }
 
