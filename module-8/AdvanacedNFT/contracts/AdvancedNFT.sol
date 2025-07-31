@@ -111,7 +111,7 @@ contract AdvancedNFT is ERC721, Ownable2Step, Multicall {
     /**
     * After 10 blocks, users can reveal their answer
      */
-    function reveal(bytes32 revealHash) public returns(uint256){
+    function reveal(bytes32 revealHash) internal returns(uint256){
         CommitDetails memory userCommitDetails = commitments[msg.sender];
         require(!userCommitDetails.revealed, "Already revealed");
         require(uint64(block.number) > userCommitDetails.commitBlock + 10, "Too early for reveal");
@@ -174,13 +174,14 @@ contract AdvancedNFT is ERC721, Ownable2Step, Multicall {
     * owner can call.
      */
     function nextStage() public onlyOwner(){
+        require(stage != Stages.SoldOut, "Final state");
         stage = Stages(uint(stage) + 1);
     }
 
     /**
     * Simple getHash function for user to submit their commit.
      */
-    function getHash(bytes32 data) public view returns (bytes32){
+    function getHash(bytes32 data) internal view returns (bytes32){
         return keccak256(abi.encodePacked(msg.sender, data));
     }
 }
