@@ -11,7 +11,7 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 
 
 contract AdvancedNFT is ERC721, Ownable2Step {
-    using BitMaps for Bitmaps.Bitmap;
+    using BitMaps for BitMaps.BitMap;
     using Strings for uint256;
 
     enum Stages {
@@ -34,8 +34,9 @@ contract AdvancedNFT is ERC721, Ownable2Step {
     uint256 public tokensMinted;
 
     //States variables handling commit-reveal scheme
-    mapping(bytes32 => CommitDetails) public commitments;
+    mapping(address => CommitDetails) public commitments;
     uint256 public constant REVEAL_BLOCK_DELAY = 10;
+    uint256 public constant ANFT_PRICE = 0.1 ether;
 
     //Pull pattern fund withdrawls
     mapping(address => uint256) public pendingWithdrawals;
@@ -55,14 +56,29 @@ contract AdvancedNFT is ERC721, Ownable2Step {
         _;
     }
 
-    function mint() public {
-        
+    function publicSaleMint(uint256 index, bytes32 revealHash) public payable atStage(Stages.PublicSale) {
+        require(msg.value == ANFT_PRICE, "Not enough ether");
+        require (!BitMaps.get(bitHasMinted, index), "Already claimed");
+        mint(index, revealHash);
     }
-    /**
-    * Simple getHash function for user to submit their commit.
-     */
-    function getHash(bytes32 data) public view returns (bytes32){
-        return keccak256(abi.encodePacked(msg.sender, data));
+
+    function preSaleMint(bytes32[] calldata proof, uint256 index, bytes32 revealHash) public payable atStage(Stages.Presale){
+        require(msg.value == ANFT_PRICE, "Not enough ether");
+        require (!BitMaps.get(bitHasMinted, index), "Already claimed");
+        require(isWhitelisted(proof, msg.sender, index), "Not whitelisted");
+        mint(index, revealHash);
+    }
+
+    function mint (uint256 index, bytes32 revealHash) internal {
+        uint256 tokenId = reveal(revealHash);
+        BitMaps.setTo(bitHasMinted, index, true);
+        _safeMint(msg.sender, tokenId);
+    }
+
+    //Verify leaf
+    function isWhitelisted(bytes32[] calldata proof, address userAddress, uint256 bitIndex) internal view returns (bool){
+        bytes32 leaf = keccak256(abi.encodePacked(userAddress, bitIndex));
+        return MerkleProof.verify(proof, merkleRoot, leaf);
     }
     
     /**
@@ -77,20 +93,19 @@ contract AdvancedNFT is ERC721, Ownable2Step {
     /**
     * After 10 blocks, users can reveal their answer
      */
-    function reveal(bytes32 revealHash) public{
+    function reveal(bytes32 revealHash) public returns(uint256){
         CommitDetails memory userCommitDetails = commitments[msg.sender];
         require(!userCommitDetails.revealed, "Already revealed");
         require(uint64(block.number) > userCommitDetails.commitBlock + 10, "Too early for reveal");
         require(uint64(block.number) <= userCommitDetails.commitBlock + 250, "Too late for reveal");
         require(getHash(revealHash) == userCommitDetails.commit, "Incorrect secret");
         
-        bytes32 blockhash = blockhash(userCommitDetails.commitBlock);
-        uint256 myNFTID = uint256 (keccak256(abi.encodePacked(blockHash, revealHash)))%TOTAL_SUPPLY;
-
-        myNFTID = avoidCollision(myNFTID);
-
         commitments[msg.sender].revealed = true;
+        uint256 myNFTID = uint256 (keccak256(abi.encodePacked(blockhash(userCommitDetails.commitBlock), revealHash)))%TOTAL_SUPPLY;
 
+        if (_ownerOf(myNFTID) != address(0)) myNFTID = avoidCollision(myNFTID);
+
+        return myNFTID;
     }
 
     /**
@@ -98,17 +113,24 @@ contract AdvancedNFT is ERC721, Ownable2Step {
     * The next available NFT id will be allocated to user
     * and so on.
      */
-    function avoidCollision(uint256 tokenId) internal returns(uint256){
-        
-    }
+    function avoidCollision(uint256 tokenId) internal view returns(uint256){
+        for(uint256 i; i < TOTAL_SUPPLY; i++){
+            if(tokenId < TOTAL_SUPPLY - 1) tokenId++;
+            else tokenId = 0;
 
-    //Verify leaf
-    function isWhitelisted(bytes32[] calldata proof, address userAddress, uint256 bitIndex) public view returns (bool){
-        bytes32 leaf = keccak256(abi.encodePacked(userAddress, bitIndex));
-        return MerkleProof.verify(proof, merkleRoot, leaf);
+            if(_ownerOf(tokenId) == address(0)) return tokenId;
+        }
+        revert("No available NFTs");
     }
 
     function nextStage() internal{
         stage = Stages(uint(stage) + 1);
+    }
+
+    /**
+    * Simple getHash function for user to submit their commit.
+     */
+    function getHash(bytes32 data) public view returns (bytes32){
+        return keccak256(abi.encodePacked(msg.sender, data));
     }
 }
