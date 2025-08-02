@@ -37,6 +37,10 @@ contract AdvancedNFT is ERC721, Ownable2Step, Multicall {
     uint256 public constant REVEAL_BLOCK_DELAY = 10;
     uint256 public constant ANFT_PRICE = 0.1 ether;
 
+    //Available NFT tokens
+    mapping(uint256 => uint256) private availableTokenIds;
+    uint256 public availableNfts = TOTAL_SUPPLY;
+
     //Pull pattern fund withdrawls
     mapping(address => uint256) public withdrawalAmount;
 
@@ -115,30 +119,18 @@ contract AdvancedNFT is ERC721, Ownable2Step, Multicall {
         CommitDetails memory userCommitDetails = commitments[msg.sender];
         require(!userCommitDetails.revealed, "Already revealed");
         require(uint64(block.number) > userCommitDetails.commitBlock + 10, "Too early for reveal");
-        require(uint64(block.number) <= userCommitDetails.commitBlock + 250, "Too late for reveal");
+        require(uint64(block.number) <= userCommitDetails.commitBlock + 256, "Too late for reveal");
         require(getHash(revealHash) == userCommitDetails.commit, "Incorrect secret");
         
         commitments[msg.sender].revealed = true;
-        uint256 myNFTID = uint256 (keccak256(abi.encodePacked(blockhash(userCommitDetails.commitBlock), revealHash)))%TOTAL_SUPPLY;
+        //Collision prevention logic
+        uint256 randomNum = uint256 (keccak256(abi.encodePacked(blockhash(userCommitDetails.commitBlock), revealHash)))%availableNfts;
+        uint256 tokenId = availableTokenIds[randomNum] == 0 ? randomNum : availableTokenIds[randomNum];
+        uint256 lastIndex = availableNfts - 1;
+        availableTokenIds[randomNum] = availableTokenIds[lastIndex] == 0 ? lastIndex : availableTokenIds[lastIndex];
+        availableNfts--;
 
-        if (_ownerOf(myNFTID) != address(0)) myNFTID = avoidCollision(myNFTID);
-
-        return myNFTID;
-    }
-
-    /**
-    * In the case where the NFT id is already taken.
-    * The next available NFT id will be allocated to user
-    * and so on.
-     */
-    function avoidCollision(uint256 tokenId) internal view returns(uint256){
-        for(uint256 i; i < TOTAL_SUPPLY; i++){
-            if(tokenId < TOTAL_SUPPLY - 1) tokenId++;
-            else tokenId = 0;
-
-            if(_ownerOf(tokenId) == address(0)) return tokenId;
-        }
-        revert("No available NFTs");
+        return tokenId;
     }
 
     /**
