@@ -454,4 +454,77 @@ describe("AdvancedNFT", function () {
 
     await expect(advancedNFT.connect(addr1).withdrawFunds()).to.be.revertedWith("Nothing to withdraw");
   });
+
+  it("should allow multiple NFT transfers in a single multicall transaction", async function () {
+    await advancedNFT.nextStage(); // Presale
+    await advancedNFT.nextStage(); // PublicSale
+
+    // User 1 mints
+    const user1 = addrs[0];
+    const revealStr1 = "public_secret1";
+    const revealHash1 = ethers.keccak256(ethers.toUtf8Bytes(revealStr1));
+    const commitHash1 = await advancedNFT.connect(user1).getHash(revealHash1);
+    await advancedNFT.connect(user1).commit(commitHash1);
+    await advanceBlocks(11);
+    let tx = await advancedNFT.connect(user1).publicSaleMint(currentIndex++, revealHash1, { value: ethers.parseEther("0.1") });
+    let receipt = await tx.wait();
+    const tokenId1 = receipt.logs[0].args.tokenId;
+
+    // User 2 mints
+    const user2 = addrs[1];
+    const revealStr2 = "public_secret2";
+    const revealHash2 = ethers.keccak256(ethers.toUtf8Bytes(revealStr2));
+    const commitHash2 = await advancedNFT.connect(user2).getHash(revealHash2);
+    await advancedNFT.connect(user2).commit(commitHash2);
+    await advanceBlocks(11);
+    tx = await advancedNFT.connect(user2).publicSaleMint(currentIndex++, revealHash2, { value: ethers.parseEther("0.1") });
+    receipt = await tx.wait();
+    const tokenId2 = receipt.logs[0].args.tokenId;
+
+    expect(await advancedNFT.tokensMinted()).to.equal(2n);
+
+    // User1 transfers their NFT (tokenId1) to User2 via multicall
+    const transfer1 = advancedNFT.interface.encodeFunctionData("transferFrom", [user1.address, user2.address, tokenId1]);
+    await advancedNFT.connect(user1).multicall([transfer1]);
+
+    expect(await advancedNFT.ownerOf(tokenId1)).to.equal(user2.address);
+
+    // User2 now owns tokenId1 and tokenId2
+    expect(await advancedNFT.ownerOf(tokenId2)).to.equal(user2.address);
+
+    // User2 transfers both NFTs back to User1 in one multicall batch
+    const transfer2 = advancedNFT.interface.encodeFunctionData("transferFrom", [user2.address, user1.address, tokenId1]);
+    const transfer3 = advancedNFT.interface.encodeFunctionData("transferFrom", [user2.address, user1.address, tokenId2]);
+
+    await advancedNFT.connect(user2).multicall([transfer2, transfer3]);
+
+    expect(await advancedNFT.ownerOf(tokenId1)).to.equal(user1.address);
+    expect(await advancedNFT.ownerOf(tokenId2)).to.equal(user1.address);
+  });
+
+  it("should NOT allow multiple mint calls batched via multicall", async function () {
+    await advancedNFT.nextStage(); // Presale
+    // Setup user and proof for whitelist (index 0)
+    const user = addr1;
+    const index = 0;
+    const [addr, bitIndex] = whitelist[index];
+    const proof = merkleTree.getProof([addr, bitIndex.toString()]);
+
+    // Commit & advance blocks
+    const revealStr1 = "secret1";
+    const revealHash1 = ethers.keccak256(ethers.toUtf8Bytes(revealStr1));
+    const commitHash1 = await advancedNFT.connect(user).getHash(revealHash1);
+    await advancedNFT.connect(user).commit(commitHash1);
+    await advanceBlocks(11);
+
+    // Encode two mint calls (same user, same proof and revealHash for simplicity)
+    const mintCall1 = advancedNFT.interface.encodeFunctionData("preSaleMint", [proof, index, revealHash1]);
+    const mintCall2 = advancedNFT.interface.encodeFunctionData("preSaleMint", [proof, index + 1, revealHash1]); // next index
+
+    // Attempt multicall with one tx.value == ANFT_PRICE (insufficient for two mints)
+    await expect(
+      advancedNFT.connect(user).multicall([mintCall1, mintCall2], { value: ethers.parseEther("0.2") })
+    ).to.be.reverted; // Fails msg.value check on second mint
+
+  });
 });

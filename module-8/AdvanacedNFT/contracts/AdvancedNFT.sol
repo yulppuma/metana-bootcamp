@@ -12,7 +12,6 @@ import "@openzeppelin/contracts/utils/Strings.sol";
 
 contract AdvancedNFT is ERC721, Ownable2Step, Multicall {
     using BitMaps for BitMaps.BitMap;
-    using Strings for uint256;
 
     enum Stages {
         NoMintsAllowed,
