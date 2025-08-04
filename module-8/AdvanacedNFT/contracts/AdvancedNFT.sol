@@ -70,36 +70,37 @@ contract AdvancedNFT is ERC721, Ownable2Step, Multicall {
     /**
     * Public sale mint checks that the current state is in PublicSale.
      */
-    function publicSaleMint(uint256 index, bytes32 revealHash) public payable atStage(Stages.PublicSale) mintChecks(index){
-        mint(index, revealHash);
+    function publicSaleMint(uint256 index, bytes32 revealHash) public payable atStage(Stages.PublicSale) mintChecks(index) returns(uint256){
+        return mint(index, revealHash);
     }
 
     /**
     * Presale mint function checks that the current state is in Presale,
     * and the address calling the function is whitelisted.
      */
-    function preSaleMint(bytes32[] calldata proof, uint256 index, bytes32 revealHash) public payable atStage(Stages.Presale) mintChecks(index){
+    function preSaleMint(bytes32[] calldata proof, uint256 index, bytes32 revealHash) public payable atStage(Stages.Presale) mintChecks(index) returns(uint256){
         require(isWhitelisted(proof, msg.sender, index), "Not whitelisted");
-        mint(index, revealHash);
+        return mint(index, revealHash);
     }
 
     /**
     * General mint function, after all the checks are made
     * whether the mint is in presale or public sale.
      */
-    function mint (uint256 index, bytes32 revealHash) internal {
+    function mint (uint256 index, bytes32 revealHash) internal returns(uint256){
         uint256 tokenId = reveal(revealHash);
         BitMaps.setTo(bitHasMinted, index, true);
         _safeMint(msg.sender, tokenId);
         tokensMinted++;
         if (tokensMinted >= TOTAL_SUPPLY) stage = Stages.SoldOut;
+        return tokenId;
     }
 
     /**
     * Checks if the address is whitelisted.
      */
     function isWhitelisted(bytes32[] calldata proof, address userAddress, uint256 bitIndex) internal view returns (bool){
-        bytes32 leaf = keccak256(abi.encodePacked(userAddress, bitIndex));
+        bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(userAddress, bitIndex))));
         return MerkleProof.verify(proof, merkleRoot, leaf);
     }
     
@@ -173,7 +174,7 @@ contract AdvancedNFT is ERC721, Ownable2Step, Multicall {
     /**
     * Simple getHash function for user to submit their commit.
      */
-    function getHash(bytes32 data) internal view returns (bytes32){
+    function getHash(bytes32 data) public view returns (bytes32){
         return keccak256(abi.encodePacked(msg.sender, data));
     }
 }
