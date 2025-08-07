@@ -525,6 +525,6 @@ describe("AdvancedNFT", function () {
     await expect(
       advancedNFT.connect(user).multicall([mintCall1, mintCall2], { value: ethers.parseEther("0.2") })
     ).to.be.reverted; // Fails msg.value check on second mint
-
+    
   });
 });
