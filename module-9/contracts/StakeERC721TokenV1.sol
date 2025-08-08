@@ -2,17 +2,20 @@
 
 pragma solidity 0.8.30;
 
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 
 /**
  * @title StakeERC721TokenV1
  * @dev Allows user to mint SNFT tokens.
  */
 
-contract StakeERC721TokenV1 is ERC721 {
+contract StakeERC721TokenV1 is Initializable, ERC721Upgradeable {
     uint256 public nextTokenId;
 
-    constructor() ERC721("StakeNFT", "SNFT") {}
+    function initialize() public initializer {
+        __ERC721_init("StakeNFT", "SNFT");
+    }
 
     /**
      * @dev Mints SNFT tokens.

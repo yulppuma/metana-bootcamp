@@ -4,21 +4,21 @@ pragma solidity 0.8.30;
 
 import "./StakeERC20TokenV1.sol";
 import "./StakeERC721TokenV1.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-contract StakeTokenV1 is IERC721Receiver {
+contract StakeTokenV1 is Initializable, IERC721Receiver {
     StakeERC20TokenV1 public token;
-    IERC721 public nft;
+    StakeERC721TokenV1 public nft;
     mapping(uint256 => address) public originalOwner;
     mapping(uint256 => uint256) public tokenStakingTimestamp;
 
     uint256 public constant STAKE_TIME = 24 hours;
     uint256 public constant STAKE_REWARD_AMOUNT = 10 * 1e18;
 
-    constructor(address tokenAddress, address NFTAddress) {
+    function initialize(address tokenAddress, address NFTAddress) public initializer {
         token = StakeERC20TokenV1(tokenAddress);
-        nft = IERC721(NFTAddress);
+        nft = StakeERC721TokenV1(NFTAddress);
     }
 
     modifier originalNFTOwner(uint256 tokenId) {
