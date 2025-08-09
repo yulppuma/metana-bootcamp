@@ -61,11 +61,49 @@ describe("StakeTokenV2 (proxy)", function () {
         acceptOwnershipTx2.wait();
     });
 
-    it ("should return the correct owner of ERC20 and ERC721V2 contracts", async function(){
-        console.log(await ERC20Token.owner());
-        console.log(await ERC721TokenV2.owner());
-        console.log("Real add: ", contractV2Address);
-        /*expect(await ERC20Token.owner()).to.be.equal(contractV2Address);
-        expect(await ERC721TokenV2.owner()).to.be.equal(contractV2Address);*/
+    it ("should return the correct owner of ERC20V1, ERC721V2, and Stake contracts", async function(){
+        expect(await ERC20Token.owner()).to.be.equal(contractV2Address);
+        expect(await ERC721TokenV2.owner()).to.be.equal(contractV2Address);
+        expect(await tokenV2.owner()).to.be.equal(addr1.address);
+    });
+
+    it ("should only let god mode address to transfer NFTs between accounts forcefully" , async function(){
+        const mintTx = await ERC721TokenV2.connect(addr2).mintNFT();
+        await mintTx.wait();
+        expect (await ERC721TokenV2.connect(addr2).balanceOf(addr2)).to.equal(1);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr2);
+        const godModeTransferTx = await tokenV2.connect(addr1).godModeTransfers(addr2.address, addr1.address, 0);
+        await godModeTransferTx.wait();
+        expect (await ERC721TokenV2.connect(addr1).balanceOf(addr1)).to.equal(1);
+        expect (await ERC721TokenV2.connect(addr2).balanceOf(addr2)).to.equal(0);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr1);
+    });
+
+    it ("should only let god mode address to transfer NFTs between accounts forcefully, even if the NFT was staked" , async function(){
+        const mintTx = await ERC721TokenV2.connect(addr2).mintNFT();
+        await mintTx.wait();
+        expect (await ERC721TokenV2.connect(addr2).balanceOf(addr2)).to.equal(1);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr2);
+        
+        expect (await tokenV2.connect(addr2).originalOwner(0)).to.equal("0x0000000000000000000000000000000000000000");
+        expect (await tokenV2.connect(addr2).tokenStakingTimestamp(0)).to.equal(0);
+        await ERC721TokenV2.connect(addr2).approve(contractV2Address, 0);
+        expect(await ERC721TokenV2.getApproved(0)).to.equal(contractV2Address);
+        await tokenV2.connect(addr2).stakeNFT(0);
+        expect (await tokenV2.connect(addr2).originalOwner(0)).to.equal(addr2.address);
+        expect (await tokenV2.connect(addr2).tokenStakingTimestamp(0)).to.be.closeTo(await time.latest(), 2);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(contractV2Address);
+
+        //Forcefully transfer even though NFT is currently staked
+        const godModeTransferTx = await tokenV2.connect(addr1).godModeTransfers(addr2.address, addr1.address, 0);
+        await godModeTransferTx.wait();
+
+        expect (await tokenV2.connect(addr1).originalOwner(0)).to.equal(addr1.address);
+        await time.increase(48*60*60);
+        await tokenV2.connect(addr1).withdrawNFT(0);
+         expect(await ERC20Token.balanceOf(addr1)).to.equal(ethers.parseUnits("20", 18));
+        expect (await tokenV2.connect(addr1).originalOwner(0)).to.equal("0x0000000000000000000000000000000000000000");
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr1);
+        expect (await tokenV2.connect(addr1).tokenStakingTimestamp(0)).to.equal(0);
     });
 });

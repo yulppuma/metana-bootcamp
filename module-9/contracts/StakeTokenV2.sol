@@ -108,7 +108,7 @@ contract StakeTokenV2 is Initializable, IERC721Receiver, Ownable2StepUpgradeable
     * we must update originalOwner, so the security checks are passed.
      */
     function godModeTransfers(address from, address to, uint256 tokenId) external onlyOwner{
-        nft.godModeTransfer(from, to, tokenId);
-        originalOwner[tokenId] = to;
+        if(originalOwner[tokenId] == address(0)) nft.godModeTransfer(from, to, tokenId);
+        else originalOwner[tokenId] = to;
     }
 }
