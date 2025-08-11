@@ -36,7 +36,7 @@ describe("StakeTokenV2 (proxy)", function () {
             },
         });
         await ERC721TokenV2.waitForDeployment();
-        const ERC721TokenV2Address = await ERC721TokenV2.getAddress();
+        ERC721TokenV2Address = await ERC721TokenV2.getAddress();
         
         const tokenV2Contract = await ethers.getContractFactory("StakeTokenV2");
         tokenV2 = await upgrades.upgradeProxy(contractAddress, tokenV2Contract, {
@@ -61,6 +61,11 @@ describe("StakeTokenV2 (proxy)", function () {
         acceptOwnershipTx2.wait();
     });
 
+    it("should not let me call the initialize function after upgrade,", async function(){
+        await expect(ERC721TokenV2.initialize(addr1.address)).to.be.revertedWithCustomError(ERC721TokenV2, "InvalidInitialization");
+        await expect(tokenV2.initialize(await ERC20Token.getAddress(), ERC721TokenV2Address, addr1.address)).to.be.revertedWithCustomError(tokenV2, "InvalidInitialization");
+    });
+    
     it ("should return the correct owner of ERC20V1, ERC721V2, and Stake contracts", async function(){
         expect(await ERC20Token.owner()).to.be.equal(contractV2Address);
         expect(await ERC721TokenV2.owner()).to.be.equal(contractV2Address);
@@ -109,5 +114,93 @@ describe("StakeTokenV2 (proxy)", function () {
 
     it ("should revert if non-owner address tries to use god mode function", async function(){
         await expect(tokenV2.connect(addr2).godModeTransfers(addr1.address, addr2.address, 0)).to.be.revertedWithCustomError(tokenV2, "OwnableUnauthorizedAccount");
+        await expect(ERC721TokenV2.connect(addr2).godModeTransfer(addr1.address, addr2.address, 0)).to.be.revertedWithCustomError(ERC721TokenV2, "OwnableUnauthorizedAccount");
+    });
+
+    it ("should revert if onERC721Received is called by non-NFT contract", async function(){
+        await expect(tokenV2.connect(addr1).onERC721Received(addr1.address, addr2.address, 1, "0x")).to.be.revertedWith("Not ERC721 contract");
+    });
+
+    it ("should revert if user is not the owner of the NFT", async function(){
+        const mintTx = await ERC721TokenV2.connect(addr2).mintNFT();
+        await mintTx.wait();
+        expect (await ERC721TokenV2.connect(addr2).balanceOf(addr2)).to.equal(1);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr2);
+        await expect(tokenV2.connect(addr1).stakeNFT(0)).to.be.revertedWith("Not owner of NFT");
+    });
+
+    it ("should allow user to claim their rewards from staking", async function(){
+        const mintTx = await ERC721TokenV2.connect(addr2).mintNFT();
+        await mintTx.wait();
+        expect (await ERC721TokenV2.connect(addr2).balanceOf(addr2)).to.equal(1);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr2);
+        
+        await ERC721TokenV2.connect(addr2).approve(contractV2Address, 0);
+        expect(await ERC721TokenV2.getApproved(0)).to.equal(contractV2Address);
+        const stakeTx = await tokenV2.connect(addr2).stakeNFT(0);
+        await stakeTx.wait();
+
+        await time.increase(24*60*60);
+        const claimTx = await tokenV2.connect(addr2).claimRewards(0);
+        await claimTx.wait();
+    });
+
+    it ("should revert if user tries to claim rewards and they are not original NFT owner", async function(){
+        const mintTx = await ERC721TokenV2.connect(addr2).mintNFT();
+        await mintTx.wait();
+        expect (await ERC721TokenV2.connect(addr2).balanceOf(addr2)).to.equal(1);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr2);
+        
+        await ERC721TokenV2.connect(addr2).approve(contractV2Address, 0);
+        expect(await ERC721TokenV2.getApproved(0)).to.equal(contractV2Address);
+        const stakeTx = await tokenV2.connect(addr2).stakeNFT(0);
+        await stakeTx.wait();
+
+        await time.increase(24*60*60);
+        await expect(tokenV2.connect(addr1).claimRewards(0)).to.be.revertedWith("Not original owner");
+    });
+
+    it ("should revert if user tries to claim rewards before enough time has passed", async function(){
+        const mintTx = await ERC721TokenV2.connect(addr2).mintNFT();
+        await mintTx.wait();
+        expect (await ERC721TokenV2.connect(addr2).balanceOf(addr2)).to.equal(1);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr2);
+        
+        await ERC721TokenV2.connect(addr2).approve(contractV2Address, 0);
+        expect(await ERC721TokenV2.getApproved(0)).to.equal(contractV2Address);
+        const stakeTx = await tokenV2.connect(addr2).stakeNFT(0);
+        await stakeTx.wait();
+
+        await expect(tokenV2.connect(addr2).claimRewards(0)).to.be.revertedWith("No rewards");
+    });
+
+    it ("should allow user to withdraw an NFT and claim rewards if enough time has passed", async function(){
+        const mintTx = await ERC721TokenV2.connect(addr2).mintNFT();
+        await mintTx.wait();
+        expect (await ERC721TokenV2.connect(addr2).balanceOf(addr2)).to.equal(1);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr2);
+        
+        await ERC721TokenV2.connect(addr2).approve(contractV2Address, 0);
+        expect(await ERC721TokenV2.getApproved(0)).to.equal(contractV2Address);
+        const stakeTx = await tokenV2.connect(addr2).stakeNFT(0);
+        await stakeTx.wait();
+
+        const withdrawTx = await tokenV2.connect(addr2).withdrawNFT(0);
+        await withdrawTx.wait();
+    });
+
+    it ("should revert if user tries to withdraw an NFT and they are not original NFT owner", async function(){
+        const mintTx = await ERC721TokenV2.connect(addr2).mintNFT();
+        await mintTx.wait();
+        expect (await ERC721TokenV2.connect(addr2).balanceOf(addr2)).to.equal(1);
+        expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr2);
+        
+        await ERC721TokenV2.connect(addr2).approve(contractV2Address, 0);
+        expect(await ERC721TokenV2.getApproved(0)).to.equal(contractV2Address);
+        const stakeTx = await tokenV2.connect(addr2).stakeNFT(0);
+        await stakeTx.wait();
+
+        await time.increase(24*60*60);
+        await expect(tokenV2.connect(addr1).withdrawNFT(0)).to.be.revertedWith("Not original owner");
     });
 });
