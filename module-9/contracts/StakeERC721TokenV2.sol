@@ -14,7 +14,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 contract StakeERC721TokenV2 is Initializable, ERC721Upgradeable, Ownable2StepUpgradeable {
     uint256 public nextTokenId;
 
-    /// @custom:oz-upgrades-validate-as-initializer
     function initialize(address owner) public reinitializer(2) {
         __ERC721_init("StakeNFT", "SNFT");
         __Ownable_init(owner);

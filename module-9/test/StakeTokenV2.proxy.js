@@ -106,4 +106,8 @@ describe("StakeTokenV2 (proxy)", function () {
         expect (await ERC721TokenV2.ownerOf(0)).to.equal(addr1);
         expect (await tokenV2.connect(addr1).tokenStakingTimestamp(0)).to.equal(0);
     });
+
+    it ("should revert if non-owner address tries to use god mode function", async function(){
+        await expect(tokenV2.connect(addr2).godModeTransfers(addr1.address, addr2.address, 0)).to.be.revertedWithCustomError(tokenV2, "OwnableUnauthorizedAccount");
+    });
 });

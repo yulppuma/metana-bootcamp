@@ -33,6 +33,12 @@ describe("StakeToken (proxy)", function () {
         acceptOwnershipTx.wait();
     });
 
+    it("should not let me call the initialize function after deployment,", async function(){
+        await expect(ERC20Token.initialize()).to.be.revertedWithCustomError(ERC20Token, "InvalidInitialization");
+        await expect(ERC721Token.initialize()).to.be.revertedWithCustomError(ERC721Token, "InvalidInitialization");
+        await expect(token.initialize(await ERC20Token.getAddress(), await ERC721Token.getAddress())).to.be.revertedWithCustomError(token, "InvalidInitialization");
+    });
+
     it ("should not let me mint ERC20 tokens for free", async function(){
         expect(await ERC20Token.balanceOf(addr1.address)).to.equal(0);
         await expect(ERC20Token.connect(addr1).mint(addr1.address, ethers.parseUnits("10", 18))).to.be.revertedWithCustomError(ERC20Token, "OwnableUnauthorizedAccount");
