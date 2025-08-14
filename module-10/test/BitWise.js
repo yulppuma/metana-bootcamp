@@ -2,7 +2,7 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 describe("BitWise", function () {
-    let bitWise, string, addr1, addr2;
+    let bitWise, addr1, addr2;
 
     beforeEach(async ()=> {
         [addr1, addr2] = await ethers.getSigners();
