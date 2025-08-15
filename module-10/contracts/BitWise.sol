@@ -28,8 +28,7 @@ contract BitWise {
             
             for{ let i := 0 } lt(i, 8) { i := add(i, 1) }
             {
-                switch and(shr(i, data), 1)
-                case 1 {
+                if and(shr(i, data), 1){
                     result := add(result, 1)
                 }
             }
