@@ -11,7 +11,13 @@ function AppInner() {
   const { wallet } = useWallet();
   const [screen, setScreen] = useState("welcome");
 
-  if (wallet) return <div> {/* Dashboard will go here */} </div>;
+  if (wallet) return <div> {wallet.address} {/* 
+          Address will appear here obviously;
+          Along with users balance;
+          For the time being, I will focus on keeping track of account nonce
+          and signing/sending transactions to the blockchain
+
+    */}</div>;
 
   if (screen === "create") return <CreateWallet />;
   if (screen === "import") return <div>Import Wallet Screen</div>;
