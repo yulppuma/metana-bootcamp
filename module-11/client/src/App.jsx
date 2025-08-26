@@ -1,34 +1,15 @@
- import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
-import { Button } from "@/components/ui/button"
-import { WalletProvider, useWallet } from "./context/WalletContext";
-import WelcomeScreen from "./components/WelcomeScreen";
-import CreateWallet from "./components/CreateWallet";
-
-function AppInner() {
-  const { wallet } = useWallet();
-  const [screen, setScreen] = useState("welcome");
-
-  if (wallet) return <div> {wallet.address} {/* 
-          Address will appear here obviously;
-          Along with users balance;
-          For the time being, I will focus on keeping track of account nonce
-          and signing/sending transactions to the blockchain
-
-    */}</div>;
-
-  if (screen === "create") return <CreateWallet />;
-  if (screen === "import") return <div>Import Wallet Screen</div>;
-  if (screen === "recover") return <div>Recover Wallet Screen</div>;
-  return <WelcomeScreen onSelect={setScreen} />;
-}
+// src/App.jsx
+import React from "react";
+import { WalletProvider } from "./context/WalletContext.jsx";
+import WalletManager from "./components/WalletManager.jsx";
 
 export default function App() {
   return (
     <WalletProvider>
-      <AppInner />
+      <div className="max-w-3xl mx-auto p-6">
+        <h1 className="text-2xl font-bold mb-4">Basic Crypto Wallet — Wallet Creation</h1>
+        <WalletManager />
+      </div>
     </WalletProvider>
   );
 }
