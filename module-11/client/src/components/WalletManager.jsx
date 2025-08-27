@@ -1,5 +1,5 @@
 // src/components/WalletManager.jsx
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useWallet } from "../context/WalletContext.jsx";
 
 // shadcn/ui
@@ -15,159 +15,222 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/comp
 
 export default function WalletManager() {
   const {
-    mnemonic,
-    accounts,
-    selectedIndex,
-    selectedAccount,
-    createNewWallet,
-    importFromMnemonic,
-    deriveNextAccount,
-    setSelectedIndex,
-    removeWallet,
+    wallets,            // { [id]: wallet }
+    activeId,           // string | null
+    activeWallet,       // wallet object with .accounts
+    createWallet,       // ({ name, password, strength })
+    setActiveWallet,    // (walletId)
+    checkPassword,      // (walletId, password) -> boolean
+    unlockSeed,         // (walletId, password) -> mnemonic (string)
   } = useWallet();
 
-  const [mnemonicInput, setMnemonicInput] = useState("");
+  // ---- Local UI state (thin) ----
+  // Create tab
+  const [wName, setWName] = useState("My Wallet");
+  const [createPw, setCreatePw] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  // Reveal seed
+  const [revealPw, setRevealPw] = useState("");
+  const [revealedSeed, setRevealedSeed] = useState("");
+
+  const walletList = useMemo(() => Object.values(wallets || {}), [wallets]);
 
   const copy = async (text) => {
     try { await navigator.clipboard.writeText(text); } catch {}
   };
 
+  async function handleCreate(strengthBits) {
+    if (!createPw || createPw.length < 6) {
+      alert("Password must be at least 6 characters.");
+      return;
+    }
+    setCreating(true);
+    try {
+      await createWallet({
+        name: (wName || "").trim() || "Wallet",
+        password: createPw,
+        strength: strengthBits, // 128 => 12 words, 256 => 24 words
+      });
+      setCreatePw(""); // clear the password field after creating
+    } catch (e) {
+      alert(e.message || "Failed to create wallet");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleReveal() {
+    if (!activeId) { alert("Select a wallet first."); return; }
+    try {
+      const ok = await checkPassword(activeId, revealPw);
+      if (!ok) { alert("Wrong password"); return; }
+      const seed = await unlockSeed(activeId, revealPw);
+      setRevealedSeed(seed);
+      setRevealPw(""); // don't keep password in memory
+    } catch (e) {
+      alert(e.message || "Unable to decrypt seed");
+    }
+  }
+
   return (
     <TooltipProvider delayDuration={250}>
       <div className="space-y-6">
+
+        {/* Wallet (Create / Switch / Security) */}
         <Card>
           <CardHeader>
             <CardTitle>Wallet</CardTitle>
-            <CardDescription>HD wallet (BIP39/BIP32). All secrets are in localStorage.</CardDescription>
+            <CardDescription>
+              Create password-gated HD wallet; seed is encrypted and stored. Multiple wallets supported.
+            </CardDescription>
           </CardHeader>
+
           <CardContent>
             <Tabs defaultValue="create" className="w-full">
               <TabsList>
                 <TabsTrigger value="create">Create</TabsTrigger>
-                <TabsTrigger value="import">Import</TabsTrigger>
-                <TabsTrigger value="danger">Danger Zone</TabsTrigger>
+                <TabsTrigger value="switch">Switch</TabsTrigger>
+                <TabsTrigger value="security">Security</TabsTrigger>
               </TabsList>
 
+              {/* CREATE */}
               <TabsContent value="create" className="space-y-4 pt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="wname">Wallet Name</Label>
+                    <Input id="wname" value={wName} onChange={(e) => setWName(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="pw">Password</Label>
+                    <Input
+                      id="pw"
+                      type="password"
+                      value={createPw}
+                      onChange={(e) => setCreatePw(e.target.value)}
+                      placeholder="At least 6 characters"
+                    />
+                  </div>
+                </div>
+
                 <div className="flex gap-2">
-                  <Button onClick={() => createNewWallet(128)}>Create 12-word Wallet</Button>
+                  <Button disabled={creating} onClick={() => handleCreate(128)}>
+                    {creating ? "Creating…" : "Create 12-word Wallet"}
+                  </Button>
+
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button variant="outline" onClick={() => createNewWallet(256)}>Create 24-word</Button>
+                      <Button disabled={creating} variant="outline" onClick={() => handleCreate(256)}>
+                        {creating ? "Creating…" : "Create 24-word"}
+                      </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Uses 256-bit strength</TooltipContent>
+                    <TooltipContent>Uses 256-bit entropy</TooltipContent>
                   </Tooltip>
                 </div>
-                {mnemonic && (
+
+                {/* (Note: we do NOT display the mnemonic here; it's stored encrypted.) */}
+              </TabsContent>
+
+              {/* SWITCH (choose active wallet) */}
+              <TabsContent value="switch" className="space-y-4 pt-4">
+                {walletList.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">No wallets yet. Create one above.</div>
+                ) : (
                   <div className="space-y-2">
-                    <Label>Secret Recovery Phrase</Label>
-                    <div className="rounded-md border bg-muted p-3 text-sm leading-relaxed break-words">
-                      {mnemonic}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="secondary" onClick={() => copy(mnemonic)}>Copy</Button>
-                    </div>
+                    {walletList.map((w) => (
+                      <div key={w.id} className="flex items-center justify-between rounded border p-2">
+                        <div className="flex flex-col">
+                          <span className="font-medium">{w.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            Created {new Date(w.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <Button size="sm" onClick={() => setActiveWallet(w.id)}>
+                          {activeId === w.id ? "Active" : "Select"}
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </TabsContent>
 
-              <TabsContent value="import" className="space-y-4 pt-4">
+              {/* SECURITY (reveal seed with password) */}
+              <TabsContent value="security" className="space-y-4 pt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="mnemonic">Enter 12/24-word mnemonic</Label>
-                  <Input
-                    id="mnemonic"
-                    placeholder="seed phrase…"
-                    value={mnemonicInput}
-                    onChange={(e) => setMnemonicInput(e.target.value)}
-                  />
+                  <Label htmlFor="reveal-pw">Reveal Seed (requires password)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="reveal-pw"
+                      type="password"
+                      placeholder="Enter password"
+                      value={revealPw}
+                      onChange={(e) => setRevealPw(e.target.value)}
+                      className="max-w-sm"
+                    />
+                    <Button variant="secondary" onClick={handleReveal}>Reveal</Button>
+                    {revealedSeed && (
+                      <Button variant="outline" onClick={() => setRevealedSeed("")}>Clear</Button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => {
-                      if (!mnemonicInput.trim()) return;
-                      try {
-                        importFromMnemonic(mnemonicInput);
-                        setMnemonicInput("");
-                      } catch (e) {
-                        alert(e.message);
-                      }
-                    }}
-                  >
-                    Import
-                  </Button>
-                  <Button variant="ghost" onClick={() => setMnemonicInput("")}>Clear</Button>
-                </div>
-              </TabsContent>
 
-              <TabsContent value="danger" className="pt-4">
-                <Card className="border-destructive">
-                  <CardHeader>
-                    <CardTitle className="text-destructive">Remove Wallet</CardTitle>
-                    <CardDescription>Deletes mnemonic and accounts from localStorage.</CardDescription>
-                  </CardHeader>
-                  <CardFooter>
-                    <Button variant="destructive" onClick={removeWallet}>Remove</Button>
-                  </CardFooter>
-                </Card>
+                {revealedSeed && (
+                  <div className="rounded-md border bg-muted p-3 text-sm leading-relaxed break-words">
+                    {revealedSeed}
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </CardContent>
         </Card>
 
+        {/* Accounts (from active wallet) */}
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <div>
               <CardTitle>Accounts</CardTitle>
               <CardDescription>Derivation path: m/44’/60’/0’/0/i</CardDescription>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={deriveNextAccount}>+ Derive Next</Button>
-            </div>
+            {/* If you later add a deriveNextAccount({ walletId, password }) in context, hook a button here */}
           </CardHeader>
           <Separator />
           <CardContent className="pt-4">
-            {accounts.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No accounts yet. Create or import a wallet.</div>
+            {!activeWallet || (activeWallet.accounts?.length ?? 0) === 0 ? (
+              <div className="text-sm text-muted-foreground">No accounts yet for this wallet.</div>
             ) : (
               <ScrollArea className="h-72 rounded-md border">
                 <div className="p-3 space-y-3">
-                  {accounts.map((a) => {
-                    const isSelected = selectedIndex === a.index;
-                    return (
-                      <Card key={a.index} className={isSelected ? "border-primary" : ""}>
-                        <CardContent className="pt-4 space-y-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <Badge variant={isSelected ? "default" : "secondary"}>#{a.index}</Badge>
-                              <span className="font-mono text-xs md:text-sm break-all">{a.address}</span>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button variant="outline" size="sm" onClick={() => copy(a.address)}>Copy Addr</Button>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button variant="outline" size="sm" onClick={() => copy(a.privateKey)}>Copy PK</Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Keep private key secret</TooltipContent>
-                              </Tooltip>
-                              <Button size="sm" onClick={() => setSelectedIndex(a.index)}>
-                                {isSelected ? "Selected" : "Select"}
-                              </Button>
-                            </div>
+                  {activeWallet.accounts.map((a) => (
+                    <Card key={a.index}>
+                      <CardContent className="pt-4 space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">#{a.index}</Badge>
+                            <span className="font-mono text-xs md:text-sm break-all">{a.address}</span>
                           </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={() => copy(a.address)}>Copy Addr</Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="outline" size="sm" onClick={() => copy(a.publicKey)}>Copy PubKey</Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Uncompressed public key</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               </ScrollArea>
             )}
           </CardContent>
-          {selectedAccount && (
+          {activeWallet && (
             <>
               <Separator />
               <CardFooter className="flex-col items-start gap-1">
-                <div className="text-xs text-muted-foreground">Selected Account</div>
-                <div className="font-mono text-sm break-all">{selectedAccount.address}</div>
+                <div className="text-xs text-muted-foreground">Active Wallet</div>
+                <div className="font-mono text-sm break-all">{activeWallet.name}</div>
               </CardFooter>
             </>
           )}
