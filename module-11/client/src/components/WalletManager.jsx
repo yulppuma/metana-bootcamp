@@ -14,32 +14,37 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
 
 export default function WalletManager() {
-  const {
-    wallets,            // { [id]: wallet }
-    activeId,           // string | null
-    activeWallet,       // wallet object with .accounts
-    createWallet,       // ({ name, password, strength })
-    setActiveWallet,    // (walletId)
-    checkPassword,      // (walletId, password) -> boolean
-    unlockSeed,         // (walletId, password) -> mnemonic (string)
-  } = useWallet();
+  const { wallets, activeId, activeWallet, createWallet, setActiveWallet, checkPassword, unlockSeed, unlockAccountPrivateKey, deriveNextAccount,
+    setActiveAccount, selectedAccount, appendSessionIntoActive, ephemeralWallet, importMnemonicSession, importPrivateKeySession, recoverWalletSession, 
+    appendMnemonicAllToActive, appendPrivateKeyToActive } = useWallet();
 
   // ---- Local UI state (thin) ----
   // Create tab
   const [wName, setWName] = useState("My Wallet");
   const [createPw, setCreatePw] = useState("");
   const [creating, setCreating] = useState(false);
-
   // Reveal seed
   const [revealPw, setRevealPw] = useState("");
+  const [derivePw, setDerivePw] = useState("");
   const [revealedSeed, setRevealedSeed] = useState("");
+  const [impSeed, setImpSeed] = useState("");
+  const [impPk, setImpPk] = useState("");
+  const [impPwSeed, setImpPwSeed] = useState("");
+  const [impPwPk, setImpPwPk] = useState("");
+  const [isImportingSeed, setIsImportingSeed] = useState(false);
+  const [isImportingPk, setIsImportingPk] = useState(false);
 
   const walletList = useMemo(() => Object.values(wallets || {}), [wallets]);
 
+  const normalizeMnemonic = (m) => m.trim().toLowerCase().replace(/\s+/g, " ");
+  const isValidPk = (pk) => {
+    let h = pk.trim();
+    if (h.startsWith("0x")) h = h.slice(2);
+    return /^[0-9a-fA-F]+$/.test(h) && h.length === 64;
+  };
   const copy = async (text) => {
     try { await navigator.clipboard.writeText(text); } catch {}
   };
-
   async function handleCreate(strengthBits) {
     if (!createPw || createPw.length < 6) {
       alert("Password must be at least 6 characters.");
@@ -76,7 +81,6 @@ export default function WalletManager() {
   return (
     <TooltipProvider delayDuration={250}>
       <div className="space-y-6">
-
         {/* Wallet (Create / Switch / Security) */}
         <Card>
           <CardHeader>
@@ -92,6 +96,7 @@ export default function WalletManager() {
                 <TabsTrigger value="create">Create</TabsTrigger>
                 <TabsTrigger value="switch">Switch</TabsTrigger>
                 <TabsTrigger value="security">Security</TabsTrigger>
+                <TabsTrigger value="import">Import Wallet</TabsTrigger>
               </TabsList>
 
               {/* CREATE */}
@@ -180,6 +185,142 @@ export default function WalletManager() {
                   </div>
                 )}
               </TabsContent>
+
+              <TabsContent value="import" className="space-y-6 pt-4">
+                {/* Import by Seed (HD) */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Import Wallet from Seed (All Accounts)</CardTitle>
+                    <CardDescription>
+                      Imports all active accounts from this seed into the current wallet (gap-limit scan). 
+                      Balances reflect chain state; activity starts fresh here.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="imp-seed">Seed phrase</Label>
+                        <Input
+                          id="imp-seed"
+                          placeholder="twelve or twenty-four words…"
+                          value={impSeed}
+                          onChange={(e) => setImpSeed(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="imp-pw">Active wallet password</Label>
+                        <Input
+                          id="imp-pw"
+                          type="password"
+                          placeholder="Used to encrypt & save the imported seed"
+                          value={impPwSeed}
+                          onChange={(e) => setImpPwSeed(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        disabled={isImportingSeed}
+                        onClick={async () => {
+                          if (!activeId) return alert("Create or select a wallet first.");
+                          const m = normalizeMnemonic(impSeed);
+                          if (!m) return alert("Enter seed");
+                          if (impPwSeed.length < 6) return alert("Password must be at least 6 chars.");
+                          try {
+                            setIsImportingSeed(true);
+                            // optionally validateMnemonic(m) if you have bip39 available
+                            const res = await appendMnemonicAllToActive({
+                              password: impPwSeed,
+                              mnemonic: m,
+                              label: "Imported HD",
+                              // optionally: gapLimit: 20, branches: ["external","internal"]
+                            });
+                            if (!res?.appended) {
+                              alert("No new accounts found (or already present).");
+                            } else {
+                              alert(`Imported ${res.appended} account(s).`);
+                            }
+                            setImpSeed("");
+                            setImpPwSeed("");
+                          } catch (e) {
+                            alert(e?.message ?? "Import failed");
+                          } finally {
+                            setIsImportingSeed(false);
+                          }
+                        }}
+                      >
+                        {isImportingSeed ? "Importing…" : "Import All Accounts"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Import by Private Key */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Append from Private Key</CardTitle>
+                    <CardDescription>
+                      Append a single-account key into the <span className="font-semibold">current wallet</span>.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="imp-pk">Private key (0x… or hex)</Label>
+                        <Input
+                          id="imp-pk"
+                          placeholder="0x…"
+                          value={impPk}
+                          onChange={(e) => setImpPk(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="imp-pw2">Active wallet password</Label>
+                        <Input
+                          id="imp-pw2"
+                          type="password"
+                          placeholder="Used to encrypt & save the imported key"
+                          value={impPwPk}
+                          onChange={(e) => setImpPwPk(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        disabled={isImportingPk}
+                        onClick={async () => {
+                          if (!activeId) return alert("Create or select a wallet first.");
+                          if (!isValidPk(impPk)) return alert("Private key must be 32-byte hex.");
+                          if (impPwPk.length < 6) return alert("Password must be at least 6 chars.");
+                          try {
+                            setIsImportingPk(true);
+                            const res = await appendPrivateKeyToActive({
+                              password: impPwPk,
+                              privateKey: impPk.trim(),
+                              label: "Imported PK",
+                            });
+                            if (!res?.appended) {
+                              alert("That address is already in this wallet.");
+                            } else {
+                              alert(`Appended ${res.address}`);
+                            }
+                            setImpPk("");
+                            setImpPwPk("");
+                          } catch (e) {
+                            alert(e?.message ?? "Append failed");
+                          } finally {
+                            setIsImportingPk(false);
+                          }
+                        }}
+                      >
+                        {isImportingPk ? "Appending…" : "Append Account"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
             </Tabs>
           </CardContent>
         </Card>
@@ -189,9 +330,33 @@ export default function WalletManager() {
           <CardHeader className="flex-row items-center justify-between">
             <div>
               <CardTitle>Accounts</CardTitle>
-              <CardDescription>Derivation path: m/44’/60’/0’/0/i</CardDescription>
             </div>
-            {/* If you later add a deriveNextAccount({ walletId, password }) in context, hook a button here */}
+            <div className="flex gap-2 items-center">
+              <Input
+                type="password"
+                placeholder="Password to derive"
+                value={derivePw}
+                onChange={(e) => setDerivePw(e.target.value)}
+                className="w-44"
+              />
+              <Button
+                onClick={async () => {
+                  if (!activeId) { alert("Select a wallet first."); return; }
+                  if (!derivePw) { alert("Enter password"); return; }
+                  try {
+                    // optional quick check before doing work
+                    const ok = await checkPassword(activeId, derivePw);
+                    if (!ok) { alert("Wrong password"); return; }
+                    await deriveNextAccount({ walletId: activeId, password: derivePw });
+                    setDerivePw(""); // clear after success
+                  } catch (e) {
+                    alert(e.message || "Failed to derive account");
+                  }
+                }}
+              >
+                Add account
+              </Button>
+            </div>
           </CardHeader>
           <Separator />
           <CardContent className="pt-4">
@@ -216,6 +381,13 @@ export default function WalletManager() {
                               </TooltipTrigger>
                               <TooltipContent>Uncompressed public key</TooltipContent>
                             </Tooltip>
+                            <Button
+                              size="sm"
+                              variant={selectedAccount?.index === a.index ? "default" : "secondary"}
+                              onClick={() => setActiveAccount({ walletId: activeId, index: a.index })}
+                            >
+                              {selectedAccount?.index === a.index ? "Selected" : "Select"}
+                            </Button>
                           </div>
                         </div>
                       </CardContent>
@@ -234,6 +406,49 @@ export default function WalletManager() {
               </CardFooter>
             </>
           )}
+          {selectedAccount && (
+          <>
+            <Separator />
+            <CardFooter className="flex-col items-start gap-2">
+              <div className="text-xs text-muted-foreground">Selected Account</div>
+              <div className="font-mono text-sm break-all">{selectedAccount.address}</div>
+
+              {/* Balances */}
+              <div className="w-full mt-2">
+                <div className="text-xs text-muted-foreground mb-1">Balances</div>
+                {selectedAccount.balances && Object.keys(selectedAccount.balances).length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {Object.entries(selectedAccount.balances).map(([token, amt]) => (
+                      <div key={token} className="text-sm">
+                        <span className="font-mono">{token}</span>: <span>{amt}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground">No balances yet.</div>
+                )}
+              </div>
+
+              {/* Tx History */}
+              <div className="w-full mt-3">
+                <div className="text-xs text-muted-foreground mb-1">Transaction History</div>
+                {selectedAccount.txHistory && selectedAccount.txHistory.length > 0 ? (
+                  <ScrollArea className="h-32 rounded-md border">
+                    <div className="p-2 space-y-2">
+                      {selectedAccount.txHistory.map((tx, i) => (
+                        <div key={i} className="text-xs font-mono break-all">
+                          {JSON.stringify(tx)}
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                ) : (
+                  <div className="text-sm text-muted-foreground">No transactions yet.</div>
+                )}
+              </div>
+            </CardFooter>
+          </>
+        )}
         </Card>
       </div>
     </TooltipProvider>
