@@ -229,18 +229,19 @@ export default function WalletManager() {
                           if (impPwSeed.length < 6) return alert("Password must be at least 6 chars.");
                           try {
                             setIsImportingSeed(true);
-                            // optionally validateMnemonic(m) if you have bip39 available
+
                             const res = await appendMnemonicAllToActive({
                               password: impPwSeed,
                               mnemonic: m,
                               label: "Imported HD",
-                              // optionally: gapLimit: 20, branches: ["external","internal"]
                             });
+
                             if (!res?.appended) {
-                              alert("No new accounts found (or already present).");
+                              alert("No accounts imported (wallet not found in this browser).");
                             } else {
                               alert(`Imported ${res.appended} account(s).`);
                             }
+
                             setImpSeed("");
                             setImpPwSeed("");
                           } catch (e) {
@@ -366,11 +367,13 @@ export default function WalletManager() {
               <ScrollArea className="h-72 rounded-md border">
                 <div className="p-3 space-y-3">
                   {activeWallet.accounts.map((a) => (
-                    <Card key={a.index}>
+                    <Card key={(a.address ?? `${a.origin?.id || "local"}:${a.index}`)}>
                       <CardContent className="pt-4 space-y-3">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <Badge variant="secondary">#{a.index}</Badge>
+                            <Badge variant="secondary">{(typeof a.origin === "string"
+                              ? a.origin : a.origin?.label) ?? (activeWallet?.name || "Local")} {" "}#
+                          {Number.isFinite(a.origin?.index) ? a.origin.index : a.index}</Badge>
                             <span className="font-mono text-xs md:text-sm break-all">{a.address}</span>
                           </div>
                           <div className="flex gap-2">

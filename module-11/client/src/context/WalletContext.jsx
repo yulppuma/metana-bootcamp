@@ -9,8 +9,10 @@ import { secp256k1 } from "ethereum-cryptography/secp256k1.js";
 import { keccak256 } from "ethereum-cryptography/keccak.js";
 import { utf8ToBytes, hexToBytes, bytesToHex as toHex } from "ethereum-cryptography/utils.js";
 
-// keystore (your file from earlier; adjust path if you put it elsewhere)
-import { encryptSecretWithPassword, decryptSecretWithPassword, makePasswordVerifier, verifyPassword as verifyPw,} from "./utils/ec-keystore.js"; // <-- NOTE: path
+// util functions for specific functionalities (updating imported account/wallet, encrypting/decrypting sensitive data, and any other non-generic functionality)
+import { encryptSecretWithPassword, decryptSecretWithPassword, makePasswordVerifier, verifyPassword as verifyPw,} from "./utils/ec-keystore.js";
+import { walletIdFromMnemonic, normalizeMnemonic } from "./utils/walletId.js";
+import { setWalletMeta, bumpLastCreatedIndex, getWalletMeta } from "./utils/walletMeta.js";
 
 const STORE_KEY = "wallet_store_v1";
 const PATH_PREFIX = `m/44'/60'/0'/0/`;
@@ -89,11 +91,15 @@ export function WalletProvider({ children }) {
     // 1) Generate mnemonic (12 words for 128, 24 words for 256)
     const mnemonic = bip39.generateMnemonic(english, strength);
     if (!bip39.validateMnemonic(mnemonic, english)) throw new Error("Mnemonic invalid");
+    const norm = normalizeMnemonic(mnemonic);
+    const wid = walletIdFromMnemonic(norm);
+    setWalletMeta(wid, { lastCreatedIndex: 0 });
 
     // 2) Derive root & first account
     const seed = bip39.mnemonicToSeedSync(mnemonic); // Uint8Array
     const root = HDKey.fromMasterSeed(seed);
-    const child0 = root.derive(PATH_PREFIX + "0");
+    const PATH0 = PATH_PREFIX + "0"; 
+    const child0 = root.derive(PATH0);
     const priv = child0.privateKey; // Uint8Array(32)
     if (!priv) throw new Error("No private key at path");
     const pub = secp256k1.getPublicKey(priv, false); // 65 bytes (0x04 + X + Y)
@@ -118,13 +124,16 @@ export function WalletProvider({ children }) {
           index: 0,
           address,
           publicKey: to0x(pub),
-          // privateKey NOT stored; re-derive from mnemonic when needed
+          derivationPath: PATH0,
           source: { type: "hd", ref: PRIMARY_REF, index: 0 },
           balances: {},   // per-account balances
           txHistory: [],  // per-account tx history
         },
       ],
-      meta: {}, // room for RPC url, notes, etc.
+      meta: {
+        ...((store.wallets?.[id]?.meta) || {}),
+        wid,
+      },
     };
 
     const next = { ...store, wallets: { ...store.wallets, [id]: wallet } };
@@ -140,6 +149,8 @@ export function WalletProvider({ children }) {
 
     // 1) unlock mnemonic with the user's password
     const mnemonic = await decryptSecretWithPassword(w.encSeed, password);
+
+    const wid = walletIdFromMnemonic(normalizeMnemonic(mnemonic));
 
     // 2) derive next index from the HD root
     const seed = bip39.mnemonicToSeedSync(mnemonic);
@@ -157,12 +168,14 @@ export function WalletProvider({ children }) {
     const address = "0x" + toHex(addrBytes);
 
     const newAccount = {
-      index: nextIndex,
-      address,
-      publicKey: "0x" + toHex(pub),
-      balances: {},
-      txHistory: [],
-    };
+    index: nextIndex,
+    address,
+    publicKey: "0x" + toHex(pub),
+    balances: {},
+    txHistory: [],
+    derivationPath: `${PATH_PREFIX}${nextIndex}`,
+    origin: { id: wid, label: w.name ?? "Local", index: nextIndex },
+  };
 
     // 4) persist
     const updated = {
@@ -170,6 +183,8 @@ export function WalletProvider({ children }) {
       accounts: [...w.accounts, newAccount],
     };
     setStore(s => ({ ...s, wallets: { ...s.wallets, [walletId]: updated } }));
+
+    bumpLastCreatedIndex(wid, nextIndex);
 
     return newAccount;
   };
@@ -225,97 +240,84 @@ export function WalletProvider({ children }) {
     };
   }
 
-  const appendMnemonicAllToActive = async ({
-    password,
-    mnemonic,
-    label = "Imported HD",
-    gapLimit = 5,
-    maxScan = 100,     // safety cap
-    fallbackCount = 5, // if no RPC configured
-  }) => {
+  const appendMnemonicAllToActive = async ({password, mnemonic, label = "Imported HD",}) => {
     if (!activeId) throw new Error("Create/select a wallet first");
     if (!password || password.length < 6) throw new Error("Password too short");
-    const m = mnemonic.trim().toLowerCase().replace(/\s+/g, " ");
+
+    // Normalize & validate the SRP
+    const m = normalizeMnemonic(mnemonic);
     if (!bip39.validateMnemonic(m, english)) throw new Error("Invalid seed phrase");
 
     const target = store.wallets[activeId];
     if (!target) throw new Error("Active wallet not found");
 
-    // Get RPC from env or wallet meta (don’t store API keys in localStorage)
-    const rpcUrl =
-      target.meta?.rpcUrl ||
-      import.meta?.env?.VITE_RPC_SEPOLIA || // e.g. set this in .env
-      null;
+    // --- LOCAL-ONLY LOOKUP: find the source wallet by wallet-id ---
+    const wid = walletIdFromMnemonic(m);
+    const src = Object.values(store.wallets || {}).find(w => w?.meta?.wid === wid) || null;
+    if (!src) {
+      // Your rule: if it isn’t in local storage, it doesn’t exist
+      throw new Error("Wallet not found in this browser (no local data)");
+    }
 
+    // How many accounts should exist for this wallet?
+    // Prefer local metadata; fallback to the source wallet's accounts
+    const meta = getWalletMeta(wid);
+    const lastCreatedIndex =
+      typeof meta?.lastCreatedIndex === "number"
+        ? meta.lastCreatedIndex
+        : (src.accounts?.length || 0) - 1;
+
+    if (lastCreatedIndex < 0) return { appended: 0 };
+
+    // Prepare/attach key source on the ACTIVE wallet (so we can re-derive later)
     const keySources = ensureKeySourcesArray(target);
     const now = Date.now();
-
-    // 1) Save imported seed (encrypted with ACTIVE wallet password) in keySources
-    const ref = "hd:" + hdIdFromMnemonic(m).slice(3);
+    const ref = `hd:${wid}`; // stable “source id” for this mnemonic in this browser
     if (!keySources.find(k => k.id === ref)) {
       const encSeed = await encryptSecretWithPassword(m, password);
       keySources.push({ id: ref, type: "hd", label, encSeed, addedAt: now });
     }
 
-    // 2) Derive & decide which to append
+    // Derive addresses deterministically for 0..lastCreatedIndex on standard path
+    // (Same logic you use in create/derive: PATH_PREFIX + i)
     const seed = bip39.mnemonicToSeedSync(m);
     const root = HDKey.fromMasterSeed(seed);
-    const exists = (addr) => target.accounts.some(a => a.address.toLowerCase() === addr.toLowerCase());
+
+    const exists = (addr) =>
+      (target.accounts || []).some(a => a.address.toLowerCase() === addr.toLowerCase());
 
     const toAppend = [];
-    if (!rpcUrl) {
-      // No RPC: append first N so user sees something
-      for (let i = 0; i < fallbackCount && i < maxScan; i++) {
-        const child = root.derive(PATH_PREFIX + String(i));
-        if (!child.privateKey) continue;
-        const pub = secp256k1.getPublicKey(child.privateKey, false);
-        const addr = addressFromPublicKey(pub);
-        if (exists(addr)) continue;
-        toAppend.push({
-          index: i,
-          address: addr,
-          publicKey: to0x(pub),
-          source: { type: "hd", ref, index: i },
-          origin: "imported",
-          importedAt: now,
-          balances: {},
-          txHistory: [],
-        });
-      }
-    } else {
-      // RPC available: gap-limit discovery
-      let i = 0, gap = 0;
-      while (i < maxScan && gap < gapLimit) {
-        const child = root.derive(PATH_PREFIX + String(i));
-        if (!child.privateKey) { i++; gap++; continue; }
-        const pub = secp256k1.getPublicKey(child.privateKey, false);
-        const addr = addressFromPublicKey(pub);
+    for (let i = 0; i <= lastCreatedIndex; i++) {
+      const path = PATH_PREFIX + String(i);
+      const child = root.derive(path);
+      if (!child.privateKey) continue;
 
-        if (exists(addr)) { i++; gap = 0; continue; }
+      const pub = secp256k1.getPublicKey(child.privateKey, false);
+      const addr = addressFromPublicKey(pub);
 
-        let active = false;
-        try { active = await hasActivity(rpcUrl, addr); } catch {}
-        if (active) {
-          toAppend.push({
-            index: i,
-            address: addr,
-            publicKey: to0x(pub),
-            source: { type: "hd", ref, index: i },
-            origin: "imported",
-            importedAt: now,
-            balances: {},
-            txHistory: [],
-          });
-          gap = 0;
-        } else {
-          gap += 1;
-        }
-        i++;
-      }
+      if (exists(addr)) continue; // dedupe into ACTIVE wallet
+
+      toAppend.push({
+        index: i,
+        address: addr,
+        publicKey: to0x(pub),
+        derivationPath: path,
+        source: { type: "hd", ref, index: i },                 // where keys come from
+        origin: { id: wid, label: src.name || label, index: i }, // namespacing for UI
+        importedAt: now,
+        balances: {},
+        txHistory: [],
+      });
     }
 
     if (!toAppend.length) return { appended: 0 };
-    const updated = { ...target, keySources, accounts: [...target.accounts, ...toAppend] };
+
+    const updated = {
+      ...target,
+      keySources,
+      accounts: [...(target.accounts || []), ...toAppend],
+    };
+
     setStore(s => ({ ...s, wallets: { ...s.wallets, [activeId]: updated } }));
     return { appended: toAppend.length };
   };
