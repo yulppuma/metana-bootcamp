@@ -13,6 +13,7 @@ import { utf8ToBytes, hexToBytes, bytesToHex as toHex } from "ethereum-cryptogra
 import { encryptSecretWithPassword, decryptSecretWithPassword, makePasswordVerifier, verifyPassword as verifyPw,} from "./utils/ec-keystore.js";
 import { walletIdFromMnemonic, normalizeMnemonic } from "./utils/walletId.js";
 import { setWalletMeta, bumpLastCreatedIndex, getWalletMeta } from "./utils/walletMeta.js";
+import { makeRpc, resolveRpcFromEnv, CHAINS, getPendingNonce, suggest1559Fees, manualEstimateGas, erc20TransferCalldata, buildAndSignEip1559Tx, sendRawTransaction } from "./utils/tx-ec.js"
 
 const STORE_KEY = "wallet_store_v1";
 const PATH_PREFIX = `m/44'/60'/0'/0/`;
@@ -26,6 +27,16 @@ const to0x = (u8) => "0x" + toHex(u8);
 const strip0x = (h) => (h?.startsWith("0x") ? h.slice(2) : h);
 const isHex = (h) => /^[0-9a-fA-F]+$/.test(h);
 
+
+function to0xHex(u8) { return "0x" + toHex(u8); }
+function privFromChild(child) {
+  if (!child.privateKey) throw new Error("No private key at path");
+  return to0xHex(child.privateKey);
+}
+function pathFor(a) {
+  // prefer the recorded path; otherwise fall back to standard by index
+  return a.derivationPath ?? (PATH_PREFIX + String(a.index));
+}
 function hdIdFromMnemonic(m) {
   const norm = m.trim().toLowerCase().replace(/\s+/g, " ");
   const h = keccak256(utf8ToBytes(norm));
@@ -41,11 +52,29 @@ function ensureKeySourcesArray(w) {
   return w.keySources;
 }
 
+function normalizePk(pk) {
+  let h = (pk || "").trim();
+  if (h.startsWith("0x") || h.startsWith("0X")) h = h.slice(2);
+  if (!/^[0-9a-fA-F]+$/.test(h) || h.length !== 64) return null;
+  return h.toLowerCase();
+}
+
 function addressFromPublicKey(uncompressedPub) {
   // uncompressed pubkey: 0x04 || X || Y; address = last 20 bytes of keccak256(X || Y)
   const noPrefix = uncompressedPub.slice(1);
   const addrBytes = keccak256(noPrefix).slice(-20);
   return to0x(addrBytes);
+}
+
+function findWalletHoldingAddress(store, address) {
+  const wallets = store.wallets || {};
+  const addrL = address.toLowerCase();
+  for (const w of Object.values(wallets)) {
+    if ((w.accounts || []).some(a => a.address.toLowerCase() === addrL)) {
+      return w;
+    }
+  }
+  return null;
 }
 
 function loadStore() {
@@ -323,43 +352,70 @@ export function WalletProvider({ children }) {
   };
 
   const appendPrivateKeyToActive = async ({ password, privateKey, label = "Imported PK" }) => {
-    if (!activeId) throw new Error("Create/select a wallet first");
+    if (!activeId) throw new Error("No active wallet selected");
     if (!password || password.length < 6) throw new Error("Password too short");
-    let pkHex = strip0x((privateKey || "").trim());
-    if (!isHex(pkHex) || pkHex.length !== 64) throw new Error("Private key must be 32-byte hex");
 
     const target = store.wallets[activeId];
     if (!target) throw new Error("Active wallet not found");
 
-    const now = Date.now();
-    const keySources = ensureKeySourcesArray(target);
-    const ref = "pk:" + pkIdFromPrivateKey(pkHex).slice(3);
+    const norm = normalizePk(privateKey);
+    if (!norm) throw new Error("Private key must be 32-byte hex");
 
-    if (!keySources.find(k => k.id === ref)) {
-      const encPrivKey = await encryptSecretWithPassword("0x" + pkHex, password);
-      keySources.push({ id: ref, type: "pk", label, encPrivKey, addedAt: now });
+    // derive pubkey + address
+    const privBytes = hexToBytes(norm);
+    if (!secp256k1.utils.isValidPrivateKey(privBytes)) {
+      throw new Error("Invalid private key");
+    }
+    const pub = secp256k1.getPublicKey(privBytes, false); // uncompressed (65 bytes)
+    const address = addressFromPublicKey(pub);
+
+    // dedup in ACTIVE wallet
+    const existsHere = (target.accounts || []).some(
+      a => a.address.toLowerCase() === address.toLowerCase()
+    );
+    if (existsHere) return { appended: 0, address };
+
+    // encrypt pk with ACTIVE wallet's password
+    const encPrivateKey = await encryptSecretWithPassword("0x" + norm, password);
+
+    // choose an index to show in UI:
+    // - if this addr is known in another local wallet, reuse its index if available
+    // - else append at the end of the active wallet as a standalone PK import
+    let uiIndex = (target.accounts?.length ?? 0);
+    let origin = { id: `pk:${address.toLowerCase()}`, label, index: 0 };
+    let derivationPath = undefined;
+
+    const other = findWalletHoldingAddress(store, address);
+    if (other) {
+      const found = (other.accounts || []).find(a => a.address.toLowerCase() === address.toLowerCase());
+      if (found?.origin) {
+        origin = { ...found.origin };
+      } else {
+        origin = { id: other.meta?.wid || origin.id, label: other.name || label, index: found?.index ?? 0 };
+      }
+      derivationPath = found?.derivationPath;
     }
 
-    const pkBytes = hexToBytes("0x" + pkHex);
-    const pub = secp256k1.getPublicKey(pkBytes, false);
-    const addr = addressFromPublicKey(pub);
-    const exists = target.accounts.some(a => a.address.toLowerCase() === addr.toLowerCase());
-    if (exists) return { appended: 0 };
-
-    const appendedAccount = {
-      index: 0,
-      address: addr,
+    const newAccount = {
+      index: uiIndex,
+      address,
       publicKey: to0x(pub),
-      source: { type: "pk", ref },
-      origin: "imported",
-      importedAt: now,
+      derivationPath,
+      source: { type: "pk" },
+      origin,
+      encPrivateKey,                 
       balances: {},
       txHistory: [],
     };
 
-    const updated = { ...target, keySources, accounts: [...target.accounts, appendedAccount] };
+    const updated = {
+      ...target,
+      accounts: [...(target.accounts || []), newAccount],
+    };
+
     setStore(s => ({ ...s, wallets: { ...s.wallets, [activeId]: updated } }));
-    return { appended: 1 };
+
+    return { appended: 1, address };
   };
 
   const appendSessionIntoActive = async ({ password, label = "Imported" }) => {
@@ -487,44 +543,122 @@ export function WalletProvider({ children }) {
   const unlockAccountPrivateKey = async ({ walletId, password, index }) => {
     const w = store.wallets[walletId];
     if (!w) throw new Error("Wallet not found");
+    const a = w.accounts?.[index];
+    if (!a) throw new Error("Account not found");
 
-    const account = w.accounts?.find(a => a.index === index && a.address);
-    if (!account) throw new Error("Account not found");
+    // PK-imported account: decrypt the stored encPrivateKey
+    if (a.source?.type === "pk") {
+      if (!a.encPrivateKey) throw new Error("No encrypted PK stored");
+      const pk = await decryptSecretWithPassword(a.encPrivateKey, password);
+      if (!/^0x[0-9a-fA-F]{64}$/.test(pk)) throw new Error("Decrypted PK malformed");
+      return pk;
+    }
 
-    const src = account.source || { type: "hd", ref: PRIMARY_REF, index }; // default old entries
-
-    // primary HD on this wallet?
-    if (src.type === "hd" && (src.ref === PRIMARY_REF || (!src.ref && w.encSeed))) {
+    // HD-derived account: decrypt mnemonic, derive along path
+    if (a.source?.type === "hd" || a.source?.type == null) {
+      if (!w.encSeed) throw new Error("No encrypted seed for this wallet");
       const mnemonic = await decryptSecretWithPassword(w.encSeed, password);
       const seed = bip39.mnemonicToSeedSync(mnemonic);
       const root = HDKey.fromMasterSeed(seed);
-      const child = root.derive(PATH_PREFIX + String(src.index ?? index));
-      if (!child.privateKey) throw new Error("No private key at path");
-      return "0x" + toHex(child.privateKey);
+      const child = root.derive(pathFor(a));
+      return privFromChild(child); // "0x..." 64 hex
     }
 
-    // imported HD key source?
-    if (src.type === "hd" && w.keySources) {
-      const ks = w.keySources.find(k => k.id === src.ref && k.type === "hd");
-      if (!ks) throw new Error("Missing imported HD source");
-      const mnemonic = await decryptSecretWithPassword(ks.encSeed, password);
-      const seed = bip39.mnemonicToSeedSync(mnemonic);
-      const root = HDKey.fromMasterSeed(seed);
-      const child = root.derive(PATH_PREFIX + String(src.index ?? index));
-      if (!child.privateKey) throw new Error("No private key at path");
-      return "0x" + toHex(child.privateKey);
-    }
-
-    // imported PK key source?
-    if (src.type === "pk" && w.keySources) {
-      const ks = w.keySources.find(k => k.id === src.ref && k.type === "pk");
-      if (!ks) throw new Error("Missing imported PK source");
-      const hex = await decryptSecretWithPassword(ks.encPrivKey, password); // "0x..."
-      return hex.toLowerCase();
-    }
-
-    throw new Error("Unable to unlock key for this account");
+    throw new Error("Unsupported account source");
   };
+
+  async function sendEthFromAccount({ chain = "sepolia", walletId, password, index, to, valueWei}) {
+    const w = store.wallets[walletId];
+    if (!w) throw new Error("Wallet not found");
+    const a = w.accounts?.[index];
+    if (!a) throw new Error("Account not found");
+
+    const privKey = await unlockAccountPrivateKey({ walletId, password, index }); // "0x..64"
+    const from = a.address;
+    const rpcUrl = chain === "holesky" ? import.meta.env.VITE_HOLESKY_RPC : import.meta.env.VITE_SEPOLIA_RPC;
+    const rpc = makeRpc(rpcUrl);
+
+    const nonce = await getPendingNonce(rpc, from);
+    const { maxPriorityFeePerGas, maxFeePerGas } = await suggest1559Fees(rpc);
+
+    const { raw, txHash } = buildAndSignEip1559Tx({
+      chainId: CHAINS[chain].chainId,
+      nonce,
+      to,
+      value: BigInt(valueWei),
+      data: "0x",
+      gasLimit: 21_000n,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+      privKey,
+    });
+
+    const accepted = await sendRawTransaction(rpc, raw);
+    // (optional) push into a.txHistory here
+
+    const now = Date.now();
+    const updatedAccs = w.accounts.map(acc => {
+      if (acc.index !== index) return acc;
+      const txEntry = {
+        hash: accepted,
+        to,
+        value: valueWei?.toString?.() ?? String(valueWei ?? 0),
+        type: "ETH" // or "ERC20" with token address & amount
+        , chain, time: now
+      };
+      return { ...acc, txHistory: [txEntry, ...(acc.txHistory || [])] };
+    });
+
+    setStore(s => ({
+      ...s,
+      wallets: { ...s.wallets, [walletId]: { ...w, accounts: updatedAccs } }
+    }));
+
+    return { predictedHash: txHash, acceptedHash: accepted };
+  }
+
+  async function sendErc20FromAccount({ chain = "sepolia", walletId, password, index, token, to, amount}) {
+    const w = store.wallets[walletId];
+    if (!w) throw new Error("Wallet not found");
+    const a = w.accounts?.[index];
+    if (!a) throw new Error("Account not found");
+
+    const privKey = await unlockAccountPrivateKey({ walletId, password, index });
+    const from = a.address;
+    const rpcUrl = chain === "holesky" ? import.meta.env.VITE_HOLESKY_RPC : import.meta.env.VITE_SEPOLIA_RPC;
+    const rpc = makeRpc(rpcUrl);
+
+    const nonce = await getPendingNonce(rpc, from);
+    const { maxPriorityFeePerGas, maxFeePerGas } = await suggest1559Fees(rpc);
+    const data = erc20TransferCalldata(to, BigInt(amount));
+
+    const gasLimit = await manualEstimateGas(rpc, { from, to: token, data });
+
+    const { raw, txHash } = buildAndSignEip1559Tx({
+      chainId: CHAINS[chain].chainId,
+      nonce,
+      to: token,
+      value: 0n,
+      data,
+      gasLimit,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+      privKey,
+    });
+
+    const accepted = await sendRawTransaction(rpc, raw);
+    return {
+      predictedHash: txHash,
+      acceptedHash: accepted,
+      gasLimit: gasLimit.toString(),
+    };
+  }
+
+  async function getAccountPendingNonce({ rpcUrl, address }) {
+    const rpc = makeRpc(rpcUrl);
+    return await getPendingNonce(rpc, address);
+  }
+
 
   const value = {
     // state
@@ -542,7 +676,6 @@ export function WalletProvider({ children }) {
     unlockSeed,          // (walletId, password) -> mnemonic string
     unlockAccountPrivateKey,
     deriveNextAccount,   //(walletId, password)
-    setActiveAccount,
 
     //import / recover / persist
     appendSessionIntoActive,
@@ -550,7 +683,12 @@ export function WalletProvider({ children }) {
     importPrivateKeySession,
     recoverWalletSession,
     appendMnemonicAllToActive,
-    appendPrivateKeyToActive
+    appendPrivateKeyToActive,
+
+    // tx logic
+    sendEthFromAccount,
+    sendErc20FromAccount,
+    getAccountPendingNonce,
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

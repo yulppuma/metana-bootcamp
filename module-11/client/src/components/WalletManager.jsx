@@ -366,36 +366,57 @@ export default function WalletManager() {
             ) : (
               <ScrollArea className="h-72 rounded-md border">
                 <div className="p-3 space-y-3">
-                  {activeWallet.accounts.map((a) => (
-                    <Card key={(a.address ?? `${a.origin?.id || "local"}:${a.index}`)}>
-                      <CardContent className="pt-4 space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">{(typeof a.origin === "string"
-                              ? a.origin : a.origin?.label) ?? (activeWallet?.name || "Local")} {" "}#
-                          {Number.isFinite(a.origin?.index) ? a.origin.index : a.index}</Badge>
-                            <span className="font-mono text-xs md:text-sm break-all">{a.address}</span>
+                  {activeWallet.accounts.map((a, idx) => {
+                    const isActive = idx === activeWallet.activeAccountIndex;
+                    return (
+                      <Card key={(a.address ?? `${a.origin?.id || "local"}:${idx}`)}>
+                        <CardContent className="pt-4 space-y-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary">
+                                {(typeof a.origin === "string" ? a.origin : a.origin?.label) ?? (activeWallet?.name || "Local")}{" "}#
+                                {Number.isFinite(a.origin?.index) ? a.origin.index : a.index}
+                              </Badge>
+                              <span className="font-mono text-xs md:text-sm break-all">{a.address}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button variant="outline" size="sm" onClick={() => copy(a.address)}>Copy Addr</Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="outline" size="sm" onClick={() => copy(a.publicKey)}>Copy PubKey</Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Uncompressed public key</TooltipContent>
+                              </Tooltip>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={async () => {
+                                  const pw = window.prompt("Enter wallet password to reveal this private key");
+                                  if (!pw) return;
+                                  try {
+                                    const pk = await unlockAccountPrivateKey({ walletId: activeId, index: idx, password: pw });
+                                    await navigator.clipboard.writeText(pk);
+                                    alert("Private key copied to clipboard.\nHandle with care!");
+                                  } catch (e) {
+                                    alert(e?.message ?? "Failed to reveal private key");
+                                  }
+                                }}
+                              >
+                                Reveal PK
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant={isActive ? "default" : "secondary"}
+                                onClick={() => setActiveAccount({ walletId: activeId, index: idx })}
+                              >
+                                {isActive ? "Selected" : "Select"}
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button variant="outline" size="sm" onClick={() => copy(a.address)}>Copy Addr</Button>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="outline" size="sm" onClick={() => copy(a.publicKey)}>Copy PubKey</Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Uncompressed public key</TooltipContent>
-                            </Tooltip>
-                            <Button
-                              size="sm"
-                              variant={selectedAccount?.index === a.index ? "default" : "secondary"}
-                              onClick={() => setActiveAccount({ walletId: activeId, index: a.index })}
-                            >
-                              {selectedAccount?.index === a.index ? "Selected" : "Select"}
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               </ScrollArea>
             )}
