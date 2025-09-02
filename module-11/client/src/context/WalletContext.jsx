@@ -108,9 +108,26 @@ export function WalletProvider({ children }) {
     return w.accounts?.[i] ?? null;
   }, [effectiveWallet]);
 
-  
-
+  const [locked, setLocked] = useState(true);
+  useEffect(() => {
+    const s = sessionStorage.getItem("WALLET_LOCKED");
+    if (s != null) setLocked(JSON.parse(s));
+  }, []);
+  useEffect(() => {
+    sessionStorage.setItem("WALLET_LOCKED", JSON.stringify(locked));
+  }, [locked]);
+  function lock() {
+    setLocked(true);
+  }
   useEffect(() => saveStore({ activeId, wallets: store.wallets }), [store, activeId]);
+
+  async function unlockWithPassword(password, walletId = activeId) {
+    const w = store.wallets[walletId];
+    if (!w) throw new Error("Wallet not found");
+    const ok = await verifyPw(password, w.passwordVerifier);
+    if (!ok) throw new Error("Invalid password");
+    setLocked(false);
+  }
 
   // ---- Create wallet (password required). Keeps previous wallets. ----
   const createWallet = async ({ name = "Wallet", password, strength = 128 }) => {
@@ -164,10 +181,14 @@ export function WalletProvider({ children }) {
       },
     };
 
-    const next = { ...store, wallets: { ...store.wallets, [id]: wallet } };
+    /*const next = { ...store, wallets: { ...store.wallets, [id]: wallet } };
     if (!store.activeId) next.activeId = id;
     setStore(next);
-    if (!store.activeId) setActiveId(id);
+    if (!store.activeId) setActiveId(id);*/
+    const next = { ...store, wallets: { ...store.wallets, [id]: wallet }, activeId: id };
+    setStore(next);
+    setActiveId(id);
+    setLocked(false); // brand new wallet -> considered logged in
     return wallet;
   };
 
@@ -552,6 +573,7 @@ export function WalletProvider({ children }) {
   };
 
   async function sendEthFromAccount({ chain = "sepolia", walletId, password, index, to, valueWei}) {
+    if (locked) throw new Error("Wallet is locked");
     const w = store.wallets[walletId];
     if (!w) throw new Error("Wallet not found");
     const a = w.accounts?.[index];
@@ -600,6 +622,7 @@ export function WalletProvider({ children }) {
   }
 
   async function sendErc20FromAccount({ chain = "sepolia", walletId, password, index, token, to, amount}) {
+    if (locked) throw new Error("Wallet is locked");
     const w = store.wallets[walletId];
     if (!w) throw new Error("Wallet not found");
     const a = w.accounts?.[index];
@@ -740,6 +763,33 @@ export function WalletProvider({ children }) {
     return tokens.length;
   }
 
+    async function recoverWithSeed({ seed, newPassword, walletId = activeId }) {
+      const w = store.wallets[walletId];
+      if (!w) throw new Error("Wallet not found");
+      if (w.kind !== "hd") throw new Error("Only HD wallets can be recovered");
+      const m = normalizeMnemonic(seed);
+      if (!bip39.validateMnemonic(m, english)) throw new Error("Invalid seed phrase");
+      const wid = walletIdFromMnemonic(m);
+      if (w.meta?.wid !== wid) throw new Error("Seed phrase does not match this wallet");
+      const encSeed = await encryptSecretWithPassword(m, newPassword);
+      const pwVerifier = await makePasswordVerifier(newPassword);
+      const updated = { ...w, encSeed, passwordVerifier: pwVerifier };
+      setStore(s => ({ ...s, wallets: { ...s.wallets, [walletId]: updated } }));
+      setLocked(false);
+      return true;
+    }
+
+    async function importWalletFromSeed({ seed, password }) {
+      const m = normalizeMnemonic(seed);
+      if (!bip39.validateMnemonic(m, english)) throw new Error("Invalid seed phrase");
+      const wid = walletIdFromMnemonic(m);
+      const foundId = Object.keys(store.wallets).find(id => store.wallets[id]?.meta?.wid === wid);
+      if (!foundId) throw new Error("Incorrect seed phrase (wallet not found in this browser)");
+      setActiveWallet(foundId);
+      setLocked(false);
+      return store.wallets[foundId];
+    }
+
 
   const value = {
     // state
@@ -748,6 +798,7 @@ export function WalletProvider({ children }) {
     activeWallet: effectiveWallet,
     selectedAccount,
     ephemeralWallet,
+    locked,
 
     // actions
     createWallet,        // ({ name?, password, strength? })
@@ -757,6 +808,10 @@ export function WalletProvider({ children }) {
     unlockSeed,          // (walletId, password) -> mnemonic string
     unlockAccountPrivateKey,
     deriveNextAccount,   //(walletId, password)
+    lock,
+    unlockWithPassword,
+    recoverWithSeed,
+    importWalletFromSeed,
 
     //import / recover / persist
     appendSessionIntoActive,

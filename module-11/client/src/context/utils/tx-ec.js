@@ -236,10 +236,7 @@ function splitRS(sig64) {
 export function signHashWithPrivKey(msgHashBytes, privKeyHex) {
   const priv = u8(privKeyHex);
   if (msgHashBytes.length !== 32) throw new Error("sign: expected 32-byte hash");
-
-  // No options in the new API. It returns { r: bigint, s: bigint, recovery: number }
   const sig = secp256k1.sign(msgHashBytes, priv);
-
   // Convert bigints to minimal big-endian byte arrays (RLP expects integers, not fixed 32B)
   const rBytes = bigToBytes(BigInt(sig.r));
   const sBytes = bigToBytes(BigInt(sig.s));

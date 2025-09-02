@@ -16,7 +16,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/comp
 export default function WalletManager() {
   const { wallets, activeId, activeWallet, createWallet, setActiveWallet, checkPassword, unlockSeed, unlockAccountPrivateKey, deriveNextAccount,
     setActiveAccount, selectedAccount, appendSessionIntoActive, ephemeralWallet, importMnemonicSession, importPrivateKeySession, recoverWalletSession, 
-    appendMnemonicAllToActive, appendPrivateKeyToActive } = useWallet();
+    appendMnemonicAllToActive, appendPrivateKeyToActive, lock } = useWallet();
 
   // ---- Local UI state (thin) ----
   // Create tab
@@ -83,13 +83,14 @@ export default function WalletManager() {
       <div className="space-y-6">
         {/* Wallet (Create / Switch / Security) */}
         <Card>
-          <CardHeader>
-            <CardTitle>Wallet</CardTitle>
-            <CardDescription>
-              Create password-gated HD wallet; seed is encrypted and stored. Multiple wallets supported.
-            </CardDescription>
+          
+          <CardHeader className="flex items-center justify-between">
+            <div>
+              <CardTitle>Wallet</CardTitle>
+              <CardDescription>Create password-gated HD wallet; seed is encrypted and stored. Multiple wallets supported.</CardDescription>
+            </div>
+            <Button variant="outline" size="sm" onClick={lock}>Lock</Button>
           </CardHeader>
-
           <CardContent>
             <Tabs defaultValue="create" className="w-full">
               <TabsList>
