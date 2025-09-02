@@ -84,7 +84,6 @@ export default function TxPlayground() {
     <Card className="rounded-2xl shadow-sm">
       <CardHeader>
         <CardTitle className="text-xl">Send ETH</CardTitle>
-        <CardDescription>Manual nonce, EIP‑1559 fees under the hood. Uses 21,000 gas when sending to EOAs; estimates for contracts.</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-5">

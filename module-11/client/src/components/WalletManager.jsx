@@ -72,7 +72,7 @@ export default function WalletManager() {
       if (!ok) { alert("Wrong password"); return; }
       const seed = await unlockSeed(activeId, revealPw);
       setRevealedSeed(seed);
-      setRevealPw(""); // don't keep password in memory
+      setRevealPw("");
     } catch (e) {
       alert(e.message || "Unable to decrypt seed");
     }
@@ -191,10 +191,6 @@ export default function WalletManager() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Import Wallet from Seed (All Accounts)</CardTitle>
-                    <CardDescription>
-                      Imports all active accounts from this seed into the current wallet (gap-limit scan). 
-                      Balances reflect chain state; activity starts fresh here.
-                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -251,7 +247,7 @@ export default function WalletManager() {
                           }
                         }}
                       >
-                        {isImportingSeed ? "Importing…" : "Import All Accounts"}
+                        {isImportingSeed ? "Importing…" : "Import"}
                       </Button>
                     </div>
                   </CardContent>
@@ -260,10 +256,7 @@ export default function WalletManager() {
                 {/* Import by Private Key */}
                 <Card>
                   <CardHeader>
-                    <CardTitle>Append from Private Key</CardTitle>
-                    <CardDescription>
-                      Append a single-account key into the <span className="font-semibold">current wallet</span>.
-                    </CardDescription>
+                    <CardTitle>Import from Private Key</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -305,18 +298,18 @@ export default function WalletManager() {
                             if (!res?.appended) {
                               alert("That address is already in this wallet.");
                             } else {
-                              alert(`Appended ${res.address}`);
+                              alert(`Imported ${res.address}`);
                             }
                             setImpPk("");
                             setImpPwPk("");
                           } catch (e) {
-                            alert(e?.message ?? "Append failed");
+                            alert(e?.message ?? "Import failed");
                           } finally {
                             setIsImportingPk(false);
                           }
                         }}
                       >
-                        {isImportingPk ? "Appending…" : "Append Account"}
+                        {isImportingPk ? "Importing…" : "Import Account"}
                       </Button>
                     </div>
                   </CardContent>
@@ -436,40 +429,6 @@ export default function WalletManager() {
             <CardFooter className="flex-col items-start gap-2">
               <div className="text-xs text-muted-foreground">Selected Account</div>
               <div className="font-mono text-sm break-all">{selectedAccount.address}</div>
-
-              {/* Balances */}
-              <div className="w-full mt-2">
-                <div className="text-xs text-muted-foreground mb-1">Balances</div>
-                {selectedAccount.balances && Object.keys(selectedAccount.balances).length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {Object.entries(selectedAccount.balances).map(([token, amt]) => (
-                      <div key={token} className="text-sm">
-                        <span className="font-mono">{token}</span>: <span>{amt}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground">No balances yet.</div>
-                )}
-              </div>
-
-              {/* Tx History */}
-              <div className="w-full mt-3">
-                <div className="text-xs text-muted-foreground mb-1">Transaction History</div>
-                {selectedAccount.txHistory && selectedAccount.txHistory.length > 0 ? (
-                  <ScrollArea className="h-32 rounded-md border">
-                    <div className="p-2 space-y-2">
-                      {selectedAccount.txHistory.map((tx, i) => (
-                        <div key={i} className="text-xs font-mono break-all">
-                          {JSON.stringify(tx)}
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                ) : (
-                  <div className="text-sm text-muted-foreground">No transactions yet.</div>
-                )}
-              </div>
             </CardFooter>
           </>
         )}

@@ -76,7 +76,7 @@ export default function BalanceCard({ chain = "sepolia" }) {
       try {
         const rpcUrl = resolveRpcFromEnv(chain);
 
-        // Guard: show a helpful error instead of throwing
+        
         if (!rpcUrl) {
           setErr(
             `Missing RPC URL for ${chain}. Check .env (VITE_${chain.toUpperCase()}_RPC) and restart the dev server.`
@@ -84,7 +84,7 @@ export default function BalanceCard({ chain = "sepolia" }) {
           return;
         }
 
-        const rpc = makeRpc(rpcUrl); // create inside try/catch
+        const rpc = makeRpc(rpcUrl);
         const bal = await rpc("eth_getBalance", [selectedAccount.address, "latest"]);
 
         if (!stop) {

@@ -34,7 +34,6 @@ function privFromChild(child) {
   return to0xHex(child.privateKey);
 }
 function pathFor(a) {
-  // prefer the recorded path; otherwise fall back to standard by index
   return a.derivationPath ?? (PATH_PREFIX + String(a.index));
 }
 function hdIdFromMnemonic(m) {
@@ -145,7 +144,7 @@ export function WalletProvider({ children }) {
       kind: "hd",
       name,
       createdAt: Date.now(),
-      passwordVerifier: pwVerifier, // for quick checks
+      passwordVerifier: pwVerifier, 
       encSeed,                      // encrypted mnemonic (seed)
       activeAccountIndex: 0,
       accounts: [
@@ -240,14 +239,12 @@ export function WalletProvider({ children }) {
       id: hdIdFromMnemonic(m),
       kind: "hd",
       name,
-      // no createdAt, no encSeed — ephemeral only
       activeAccountIndex: 0,
       accounts: [
         { index: 0, address, publicKey: "0x" + toHex(pub), balances: {}, txHistory: [] },
       ],
       meta: {},
-      // keep the plaintext ONLY in memory for the session:
-      __ephemeral: { mnemonic: m }, // private field; never persist this
+      __ephemeral: { mnemonic: m },
     };
   }
 
@@ -284,12 +281,8 @@ export function WalletProvider({ children }) {
     const wid = walletIdFromMnemonic(m);
     const src = Object.values(store.wallets || {}).find(w => w?.meta?.wid === wid) || null;
     if (!src) {
-      // Your rule: if it isn’t in local storage, it doesn’t exist
       throw new Error("Wallet not found in this browser (no local data)");
     }
-
-    // How many accounts should exist for this wallet?
-    // Prefer local metadata; fallback to the source wallet's accounts
     const meta = getWalletMeta(wid);
     const lastCreatedIndex =
       typeof meta?.lastCreatedIndex === "number"
@@ -297,18 +290,15 @@ export function WalletProvider({ children }) {
         : (src.accounts?.length || 0) - 1;
 
     if (lastCreatedIndex < 0) return { appended: 0 };
-
-    // Prepare/attach key source on the ACTIVE wallet (so we can re-derive later)
     const keySources = ensureKeySourcesArray(target);
     const now = Date.now();
-    const ref = `hd:${wid}`; // stable “source id” for this mnemonic in this browser
+    const ref = `hd:${wid}`;
     if (!keySources.find(k => k.id === ref)) {
       const encSeed = await encryptSecretWithPassword(m, password);
       keySources.push({ id: ref, type: "hd", label, encSeed, addedAt: now });
     }
 
     // Derive addresses deterministically for 0..lastCreatedIndex on standard path
-    // (Same logic you use in create/derive: PATH_PREFIX + i)
     const seed = bip39.mnemonicToSeedSync(m);
     const root = HDKey.fromMasterSeed(seed);
 
@@ -331,8 +321,8 @@ export function WalletProvider({ children }) {
         address: addr,
         publicKey: to0x(pub),
         derivationPath: path,
-        source: { type: "hd", ref, index: i },                 // where keys come from
-        origin: { id: wid, label: src.name || label, index: i }, // namespacing for UI
+        source: { type: "hd", ref, index: i },                 
+        origin: { id: wid, label: src.name || label, index: i },
         importedAt: now,
         balances: {},
         txHistory: [],
@@ -377,10 +367,6 @@ export function WalletProvider({ children }) {
 
     // encrypt pk with ACTIVE wallet's password
     const encPrivateKey = await encryptSecretWithPassword("0x" + norm, password);
-
-    // choose an index to show in UI:
-    // - if this addr is known in another local wallet, reuse its index if available
-    // - else append at the end of the active wallet as a standalone PK import
     let uiIndex = (target.accounts?.length ?? 0);
     let origin = { id: `pk:${address.toLowerCase()}`, label, index: 0 };
     let derivationPath = undefined;
@@ -477,14 +463,12 @@ export function WalletProvider({ children }) {
 
     const updated = { ...target, keySources, accounts: [...target.accounts, ...appended] };
     setStore(s => ({ ...s, wallets: { ...s.wallets, [activeId]: updated } }));
-
-    // We no longer need the session wallet once appended (optional).
     setEphemeralWallet(null);
 
     return { appended: appended.length };
   };
 
-  // ---- Switch active wallet (don’t delete anything) ----
+  // ---- Switch active wallet ----
   const setActiveWallet = (walletId) => {
     if (!store.wallets[walletId]) throw new Error("Wallet not found");
     setActiveId(walletId);
@@ -594,8 +578,6 @@ export function WalletProvider({ children }) {
     });
 
     const accepted = await sendRawTransaction(rpc, raw);
-    // (optional) push into a.txHistory here
-
     const now = Date.now();
     const updatedAccs = w.accounts.map(acc => {
       if (acc.index !== index) return acc;
