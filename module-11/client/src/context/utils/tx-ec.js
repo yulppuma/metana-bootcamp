@@ -20,6 +20,46 @@ const bigToHex0x = (n) => {
   return "0x" + (h || "00");
 };
 
+//Additional functions to handle import/sending erc20 tokens
+function _pad64(h) { 
+    return strip0x(h).padStart(64, "0"); 
+}
+function _hexToBigInt(hex) { 
+    return BigInt(hex || "0x0"); 
+}
+
+async function _ethCall(rpc, to, data) {
+  return await rpc("eth_call", [{ to, data }, "latest"]);
+}
+
+function _decodeAbiString(hex) {
+  const b = hexToBytes(strip0x(hex));
+  if (b.length >= 64) {
+    // For a single dynamic string return, layout is:
+    // [0..31]: offset (usually 0x20)
+    // [32..63]: length
+    // [64..]: bytes
+    const len = Number(_hexToBigInt("0x" + bytesToHex(b.slice(32, 64))));
+    const bytes = b.slice(64, 64 + len);
+    try {
+      return new TextDecoder().decode(bytes).replace(/\u0000+$/, "");
+    } catch {
+      // Fallback to ASCII-ish
+      return String.fromCharCode(...bytes).replace(/\u0000+$/, "");
+    }
+  }
+  if (b.length === 32) {
+    // bytes32 symbol/name variant
+    const end = b.indexOf(0);
+    const bytes = end === -1 ? b : b.slice(0, end);
+    try {
+      return new TextDecoder().decode(bytes);
+    } catch {
+      return String.fromCharCode(...bytes);
+    }
+  }
+  return "";
+}
 
 // RLP
 const rlpEncodeBytes = (b) => {
@@ -63,7 +103,6 @@ export function resolveRpcFromEnv(chain /* "sepolia" | "holesky" */) {
   const viteSep = isVite ? import.meta.env.VITE_SEPOLIA_RPC : undefined;
   const viteHol = isVite ? import.meta.env.VITE_HOLESKY_RPC : undefined;
 
-  // process.env is replaced at build time when bundlers inject it
   const pe = typeof process !== "undefined" ? process.env : undefined;
 
   const url =
@@ -86,12 +125,11 @@ export function makeRpc(rpcUrl) {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     });
 
-    const text = await res.text(); // <-- read raw first
+    const text = await res.text();
     let json;
     try {
       json = JSON.parse(text);
     } catch {
-      // Surface the real problem (HTML error page, CORS, 403, etc.)
       const preview = text?.slice(0, 200) || "<empty body>";
       throw new Error(
         `RPC response was not JSON (status ${res.status}). Check RPC URL/API key & CORS.\nMethod: ${method}\nBody preview: ${preview}`
@@ -104,7 +142,6 @@ export function makeRpc(rpcUrl) {
   };
 }
 
-// ---- chain ids (you can import from env or keep here) ----
 export const CHAINS = {
   sepolia: { chainId: 11155111n },
   holesky: { chainId: 17000n },
@@ -256,8 +293,29 @@ export async function sendRawTransaction(rpc, rawTxHex) {
 
 // ---- ERC20 calldata helper ----
 export function erc20TransferCalldata(to, amount) {
-  const selector = "a9059cbb"; // transfer(address,uint256)
+  const selector = "a9059cbb";
   const addr = strip0x(to).padStart(64, "0");
   const amt = toBig(amount).toString(16).padStart(64, "0");
   return "0x" + selector + addr + amt;
+}
+
+export async function erc20Name(rpc, token) {
+  const out = await _ethCall(rpc, token, "0x06fdde03");
+  return _decodeAbiString(out);
+}
+
+export async function erc20Symbol(rpc, token) {
+  const out = await _ethCall(rpc, token, "0x95d89b41");
+  return _decodeAbiString(out);
+}
+
+export async function erc20Decimals(rpc, token) {
+  const out = await _ethCall(rpc, token, "0x313ce567");
+  return Number(_hexToBigInt(out));
+}
+
+export async function erc20BalanceOf(rpc, token, owner) {
+  const data = "0x70a08231" + _pad64(owner);
+  const out = await _ethCall(rpc, token, data);
+  return _hexToBigInt(out);
 }

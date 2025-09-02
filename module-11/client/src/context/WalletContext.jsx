@@ -13,7 +13,7 @@ import { utf8ToBytes, hexToBytes, bytesToHex as toHex } from "ethereum-cryptogra
 import { encryptSecretWithPassword, decryptSecretWithPassword, makePasswordVerifier, verifyPassword as verifyPw,} from "./utils/ec-keystore.js";
 import { walletIdFromMnemonic, normalizeMnemonic } from "./utils/walletId.js";
 import { setWalletMeta, bumpLastCreatedIndex, getWalletMeta } from "./utils/walletMeta.js";
-import { makeRpc, resolveRpcFromEnv, CHAINS, getPendingNonce, suggest1559Fees, manualEstimateGas, erc20TransferCalldata, buildAndSignEip1559Tx, sendRawTransaction } from "./utils/tx-ec.js"
+import { makeRpc, CHAINS, getPendingNonce, suggest1559Fees, manualEstimateGas, erc20TransferCalldata, buildAndSignEip1559Tx, sendRawTransaction, erc20Name, erc20Symbol, erc20Decimals, erc20BalanceOf } from "./utils/tx-ec.js"
 
 const STORE_KEY = "wallet_store_v1";
 const PATH_PREFIX = `m/44'/60'/0'/0/`;
@@ -647,6 +647,32 @@ export function WalletProvider({ children }) {
     });
 
     const accepted = await sendRawTransaction(rpc, raw);
+    const now = Date.now();
+
+    // append tx entry to the *slot* `index`
+    const updatedAccs = w.accounts.map((acc, slot) => {
+      if (slot !== index) return acc;
+      const txEntry = {
+        type: "ERC20",
+        hash: accepted,
+        chain,
+        token,                   // contract address
+        to,
+        amount: amount.toString(), // base units
+        time: now,
+        nonce: nonce.toString(),
+        gasLimit: gasLimit.toString(),
+        maxFeePerGas: maxFeePerGas.toString(),
+        maxPriorityFeePerGas: maxPriorityFeePerGas.toString(),
+      };
+      return { ...acc, txHistory: [txEntry, ...(acc.txHistory || [])] };
+    });
+
+    setStore(s => ({
+      ...s,
+      wallets: { ...s.wallets, [walletId]: { ...w, accounts: updatedAccs } }
+    }));
+
     return {
       predictedHash: txHash,
       acceptedHash: accepted,
@@ -657,6 +683,79 @@ export function WalletProvider({ children }) {
   async function getAccountPendingNonce({ rpcUrl, address }) {
     const rpc = makeRpc(rpcUrl);
     return await getPendingNonce(rpc, address);
+  }
+
+  async function importTokenToAccount({ walletId, index, chain = "sepolia", tokenAddress }) {
+    const w = store.wallets[walletId];
+    if (!w) throw new Error("Wallet not found");
+    const a = w.accounts?.[index];
+    if (!a) throw new Error("Account not found");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) throw new Error("Invalid token address");
+
+    const rpcUrl = chain === "holesky" ? import.meta.env.VITE_HOLESKY_RPC : import.meta.env.VITE_SEPOLIA_RPC;
+    if (!rpcUrl) throw new Error(`Missing RPC URL for ${chain}`);
+    const rpc = makeRpc(rpcUrl);
+
+    const [name, symbol, decimals] = await Promise.all([
+      erc20Name(rpc, tokenAddress),
+      erc20Symbol(rpc, tokenAddress),
+      erc20Decimals(rpc, tokenAddress),
+    ]);
+
+    const token = {
+      chain,
+      address: tokenAddress.toLowerCase(),
+      name: name || "Unknown",
+      symbol: symbol || "TKN",
+      decimals: Number.isFinite(decimals) ? decimals : 18,
+    };
+
+    const updated = { ...w };
+    const acct = { ...updated.accounts[index] };
+    const tokens = Array.isArray(acct.tokens) ? [...acct.tokens] : [];
+    if (!tokens.some(t => t.chain === chain && t.address === token.address)) tokens.push(token);
+    acct.tokens = tokens;
+    updated.accounts[index] = acct;
+
+    setStore(s => ({ ...s, wallets: { ...s.wallets, [walletId]: updated } }));
+
+    // immediately fetch its current balance and store it
+    await refreshOneTokenBalance({ walletId, index, chain, tokenAddress: token.address });
+    return token;
+  }
+
+  async function refreshOneTokenBalance({ walletId, index, chain = "sepolia", tokenAddress }) {
+    const w = store.wallets[walletId];
+    if (!w) throw new Error("Wallet not found");
+    const a = w.accounts?.[index];
+    if (!a) throw new Error("Account not found");
+
+    const rpcUrl = chain === "holesky" ? import.meta.env.VITE_HOLESKY_RPC : import.meta.env.VITE_SEPOLIA_RPC;
+    if (!rpcUrl) throw new Error(`Missing RPC URL for ${chain}`);
+    const rpc = makeRpc(rpcUrl);
+
+    const raw = await erc20BalanceOf(rpc, tokenAddress, a.address);
+    const key = `${chain}:${tokenAddress.toLowerCase()}`;
+
+    const updated = { ...w };
+    const acct = { ...updated.accounts[index] };
+    acct.balances = { ...(acct.balances || {}), [key]: raw.toString() };
+    updated.accounts[index] = acct;
+
+    setStore(s => ({ ...s, wallets: { ...s.wallets, [walletId]: updated } }));
+    return raw;
+  }
+
+  async function refreshTokenBalances({ walletId, index, chain = "sepolia" }) {
+    const w = store.wallets[walletId];
+    if (!w) throw new Error("Wallet not found");
+    const a = w.accounts?.[index];
+    if (!a) throw new Error("Account not found");
+    const tokens = (a.tokens || []).filter(t => t.chain === chain);
+    for (const t of tokens) {
+      await refreshOneTokenBalance({ walletId, index, chain, tokenAddress: t.address });
+    }
+    return tokens.length;
   }
 
 
@@ -689,6 +788,11 @@ export function WalletProvider({ children }) {
     sendEthFromAccount,
     sendErc20FromAccount,
     getAccountPendingNonce,
+
+    //erc20 logic
+    importTokenToAccount,
+    refreshTokenBalances,
+    refreshOneTokenBalance
   };
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

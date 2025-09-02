@@ -9,10 +9,64 @@ function formatEth(wei) {
   return `${whole}.${frac}`;
 }
 
+function fmtUnits(raw, decimals) {
+  try {
+    const s = BigInt(raw || "0").toString();
+    const d = Number(decimals || 0);
+    if (d <= 0) return s;
+    if (s.length <= d) {
+      const z = "0".repeat(d - s.length);
+      const frac = (z + s).replace(/0+$/, "");
+      return frac ? `0.${frac}` : "0";
+    }
+    const whole = s.slice(0, s.length - d);
+    const frac = s.slice(s.length - d).replace(/0+$/, "");
+    return frac ? `${whole}.${frac}` : whole;
+  } catch { return "0"; }
+}
+
 export default function BalanceCard({ chain = "sepolia" }) {
-  const { selectedAccount } = useWallet();
+  const { selectedAccount, activeId, activeWallet, importTokenToAccount, refreshTokenBalances } = useWallet();
   const [wei, setWei] = useState("0");
   const [err, setErr] = useState("");
+  const [tokenAddr, setTokenAddr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function onImportToken() {
+    try {
+        setBusy(true); setMsg("");
+        if (!activeWallet) throw new Error("Select a wallet/account first");
+        const t = await importTokenToAccount({
+        walletId: activeId,
+        index: activeWallet.activeAccountIndex, // use array slot
+        chain,
+        tokenAddress: tokenAddr.trim(),
+        });
+        setMsg(`Imported ${t.symbol} (${t.decimals})`);
+        setTokenAddr("");
+    } catch (e) {
+        setMsg(e.message || String(e));
+    } finally {
+        setBusy(false);
+    }
+    }
+
+    async function onRefreshTokens() {
+    try {
+        setBusy(true); setMsg("");
+        await refreshTokenBalances({
+        walletId: activeId,
+        index: activeWallet.activeAccountIndex,
+        chain,
+        });
+        setMsg("Token balances refreshed");
+    } catch (e) {
+        setMsg(e.message || String(e));
+    } finally {
+        setBusy(false);
+    }
+    }
 
   useEffect(() => {
     let stop = false;
@@ -64,6 +118,61 @@ export default function BalanceCard({ chain = "sepolia" }) {
         )}
       </div>
       {!!err && <div className="text-xs text-red-600 mt-1">{err}</div>}
+      {selectedAccount && (
+        <div className="mt-3 space-y-2">
+        <div className="text-xs text-muted-foreground">Tokens on {chain}</div>
+        <div className="flex gap-2 items-center">
+            <input
+            className="border rounded px-2 py-1 font-mono flex-1"
+            placeholder="ERC-20 contract (0x...)"
+            value={tokenAddr}
+            onChange={(e)=>setTokenAddr(e.target.value)}
+            />
+            <button
+            className="px-2 py-1 border rounded text-sm"
+            disabled={busy || !tokenAddr}
+            onClick={onImportToken}
+            >
+            {busy ? "…" : "Import"}
+            </button>
+            <button
+            className="px-2 py-1 border rounded text-sm"
+            disabled={busy}
+            onClick={onRefreshTokens}
+            >
+            {busy ? "…" : "Refresh"}
+            </button>
+        </div>
+        {msg && <div className="text-xs">{msg}</div>}
+
+        {/* token rows */}
+        {(() => {
+            const tokens = selectedAccount.tokens || [];
+            const rows = tokens
+            .filter(t => t.chain === chain)
+            .map(t => {
+                const key = `${t.chain}:${t.address.toLowerCase()}`;
+                const raw = selectedAccount.balances?.[key] || "0";
+                return { ...t, raw };
+            });
+            return rows.length ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {rows.map(t => (
+                <div key={`${t.chain}:${t.address}`} className="flex items-center justify-between border rounded px-2 py-1 text-sm">
+                    <div className="flex items-center gap-2">
+                    <span className="font-semibold">{t.symbol}</span>
+                    <span className="text-xs opacity-70">{t.name}</span>
+                    </div>
+                    <div className="font-mono">{fmtUnits(t.raw, t.decimals)}</div>
+                </div>
+                ))}
+            </div>
+            ) : (
+            <div className="text-sm text-muted-foreground">No imported tokens yet.</div>
+            );
+            })()}
+        </div>
+    )}
     </div>
   );
 }

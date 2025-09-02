@@ -1,115 +1,183 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useWallet } from "../context/WalletContext";
-import {
-  erc20TransferCalldata,
-  manualEstimateGas,
-  buildAndSignEip1559Tx,
-  sendRawTransaction,
-  makeRpc,
-  CHAINS,
-  suggest1559Fees,
-  getPendingNonce
-} from "../context/utils/tx-ec";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { makeRpc, manualEstimateGas, erc20TransferCalldata } from "../context/utils/tx-ec";
 
-export default function TokenTransfer() {
-  const { activeWallet, selectedAccount, unlockAccountPrivateKey } = useWallet();
-  const [chain, setChain] = useState("sepolia");
-  const [token, setToken] = useState(""); // ERC20 address
-  const [to, setTo] = useState("");
-  const [amount, setAmount] = useState("1000000000000000000"); // 1 token in wei-units (decimals=18)
+function fmtUnits(raw, decimals) {
+  try {
+    const s = BigInt(raw || "0").toString();
+    const d = Number(decimals || 0);
+    if (d <= 0) return s;
+    if (s.length <= d) {
+      const z = "0".repeat(d - s.length);
+      const frac = (z + s).replace(/0+$/, "");
+      return frac ? `0.${frac}` : "0";
+    }
+    const whole = s.slice(0, s.length - d);
+    const frac = s.slice(s.length - d).replace(/0+$/, "");
+    return frac ? `${whole}.${frac}` : whole;
+  } catch { return "0"; }
+}
+
+function toBaseUnits(amountStr, decimals) {
+  const [w, f = ""] = (amountStr || "").trim().split(".");
+  const d = Math.max(0, Number(decimals || 0));
+  const frac = (f + "0".repeat(d)).slice(0, d);
+  const whole = (w || "0").replace(/^0+/, "") || "0";
+  const s = whole + frac;
+  return BigInt(s || "0");
+}
+
+export default function TokenTransfer({ chain = "sepolia" }) {
+  const {
+    activeId,
+    activeWallet,
+    selectedAccount,
+    sendErc20FromAccount,
+  } = useWallet();
+
+  const tokensForChain = useMemo(
+    () => (selectedAccount?.tokens || []).filter(t => t.chain === chain),
+    [selectedAccount?.tokens, chain]
+  );
+
+  const [tokenAddr, setTokenAddr] = useState(tokensForChain[0]?.address || "");
+  const tokenMeta = useMemo(
+    () => tokensForChain.find(t => t.address.toLowerCase() === (tokenAddr || "").toLowerCase()),
+    [tokensForChain, tokenAddr]
+  );
+  const decimals = tokenMeta?.decimals ?? null;
+  const symbol = tokenMeta?.symbol ?? "TKN";
+  const balanceKey = tokenMeta ? `${chain}:${tokenMeta.address.toLowerCase()}` : null;
+  const rawBalance = balanceKey ? (selectedAccount?.balances?.[balanceKey] || "0") : "0";
+
+  const [recipient, setRecipient] = useState("");
+  const [humanAmt, setHumanAmt] = useState("");
   const [password, setPassword] = useState("");
-  const [gasLimit, setGasLimit] = useState("");
-  const [txHash, setTxHash] = useState("");
-  const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
 
-  async function onSend(e) {
-    e.preventDefault();
-    if (!activeWallet || selectedAccount == null) return;
-    setBusy(true); setErr(""); setTxHash(""); setGasLimit("");
-
+  async function onSend() {
     try {
-      const rpcUrl =
-        chain === "holesky"
-          ? import.meta.env.VITE_HOLESKY_RPC
-          : import.meta.env.VITE_SEPOLIA_RPC;
+      setBusy(true); setMsg("");
+      if (!activeWallet || !selectedAccount) throw new Error("Select an account");
+      if (!tokenAddr || !decimals?.toString) throw new Error("Choose an imported token");
+      if (!/^0x[0-9a-fA-F]{40}$/.test(recipient)) throw new Error("Recipient must be a valid 0x address");
+      if (!password || password.length < 6) throw new Error("Enter wallet password");
 
-      const rpc = makeRpc(rpcUrl);
-      const from = selectedAccount.address;
-      const privKey = await unlockAccountPrivateKey({
-        walletId: activeWallet.id,
+      // convert human -> base units using token decimals
+      const amount = toBaseUnits(humanAmt, decimals);
+      if (amount <= 0n) throw new Error("Amount must be > 0");
+
+      const res = await sendErc20FromAccount({
+        chain,
+        walletId: activeId,
         password,
-        index: selectedAccount.index,
+        index: activeWallet.activeAccountIndex,
+        token: tokenAddr,
+        to: recipient,
+        amount, // base units (BigInt)
       });
 
-      const data = erc20TransferCalldata(to, BigInt(amount));
-      const est = await manualEstimateGas(rpc, { from, to: token, data });
-      setGasLimit(est.toString());
-
-      const nonce = await getPendingNonce(rpc, from);
-      const { maxPriorityFeePerGas, maxFeePerGas } = await suggest1559Fees(rpc);
-
-      const { raw, txHash } = buildAndSignEip1559Tx({
-        chainId: CHAINS[chain].chainId,
-        nonce,
-        to: token,
-        value: 0n,
-        data,
-        gasLimit: est,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
-        privKey,
-      });
-
-      const accepted = await sendRawTransaction(rpc, raw);
-      setTxHash(accepted);
+      setMsg(`Broadcasted: ${res.acceptedHash}`);
+      setHumanAmt("");
+      setPassword("");
     } catch (e) {
-      setErr(e.message || String(e));
+      setMsg(e.message || String(e));
     } finally {
       setBusy(false);
     }
   }
 
-  const explorerBase =
-    chain === "holesky"
-      ? "https://holesky.etherscan.io/tx/"
-      : "https://sepolia.etherscan.io/tx/";
+  async function previewGas() {
+    try {
+        if (!selectedAccount) throw new Error("Select an account");
+        if (!tokenMeta) throw new Error("Choose an imported token");
+        const rpcUrl = chain === "holesky" ? import.meta.env.VITE_HOLESKY_RPC : import.meta.env.VITE_SEPOLIA_RPC;
+        const rpc = makeRpc(rpcUrl);
+        const data = erc20TransferCalldata(recipient, toBaseUnits(humanAmt, tokenMeta.decimals));
+        const est = await manualEstimateGas(rpc, {
+        from: selectedAccount.address,
+        to: tokenMeta.address,
+        data,
+        value: 0n,
+        });
+        setMsg(`Estimated gas: ${est.toString()}`);
+    } catch (e) {
+        setMsg(e.message || String(e));
+    }
+    }
 
   return (
-    <div className="space-y-3 p-4 rounded-xl border">
-      <div className="flex gap-2">
-        <label className="text-sm">Chain:</label>
-        <select className="border rounded px-2 py-1" value={chain} onChange={(e)=>setChain(e.target.value)}>
-          <option value="sepolia">Sepolia</option>
-          <option value="holesky">Holesky</option>
-        </select>
-      </div>
-
-      <form onSubmit={onSend} className="space-y-2">
-        <input className="w-full border rounded px-2 py-1 font-mono" placeholder="Token (ERC20) address"
-          value={token} onChange={(e)=>setToken(e.target.value)} />
-        <input className="w-full border rounded px-2 py-1 font-mono" placeholder="Recipient 0x..."
-          value={to} onChange={(e)=>setTo(e.target.value)} />
-        <input className="w-full border rounded px-2 py-1 font-mono" placeholder="Amount (token units, e.g. 1e18)"
-          value={amount} onChange={(e)=>setAmount(e.target.value)} />
-        <input type="password" className="w-full border rounded px-2 py-1" placeholder="Wallet password"
-          value={password} onChange={(e)=>setPassword(e.target.value)} />
-        <button className="px-3 py-2 rounded bg-black text-white disabled:opacity-50"
-          disabled={busy || !token || !to || !amount || !password}>
-          {busy ? "Sending…" : "Send ERC20"}
-        </button>
-      </form>
-
-      {!!gasLimit && <div className="text-sm">Estimated gas: <b>{gasLimit}</b></div>}
-      {!!txHash && (
-        <div className="text-sm">
-          Sent! Tx:{" "}
-          <a className="text-blue-600 underline" href={explorerBase + txHash} target="_blank" rel="noreferrer">
-            {txHash}
-          </a>
+    <Card>
+      <CardContent className="space-y-3 pt-4">
+        <div className="flex items-center gap-2">
+          <Label className="w-28">Token</Label>
+          <select
+            className="border rounded px-2 py-1 flex-1 font-mono"
+            value={tokenAddr}
+            onChange={(e) => setTokenAddr(e.target.value)}
+          >
+            {tokensForChain.length === 0 && <option value="">(no imported tokens)</option>}
+            {tokensForChain.map(t => (
+              <option key={t.address} value={t.address}>
+                {t.symbol} · {t.address.slice(0, 6)}…{t.address.slice(-4)}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
-      {!!err && <div className="text-red-600 text-sm">{err}</div>}
-    </div>
+
+        <div className="flex items-center gap-2">
+          <Label className="w-28">Recipient</Label>
+          <Input
+            placeholder="0x…"
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Label className="w-28">Amount</Label>
+          <Input
+            placeholder={`e.g. 0.01 ${symbol}`}
+            value={humanAmt}
+            onChange={(e) => setHumanAmt(e.target.value)}
+          />
+        </div>
+
+        <div className="text-xs opacity-70 ml-28">
+          {tokenMeta ? (
+            <>
+              Decimals: {decimals} · Available: {fmtUnits(rawBalance, decimals)} {symbol}
+              {humanAmt && <> · Base units: {toBaseUnits(humanAmt, decimals).toString()}</>}
+            </>
+          ) : (
+            <>Pick an imported token (add it in BalanceCard)</>
+          )}
+        </div>
+
+        <Separator />
+
+        <div className="flex items-center gap-2">
+          <Label className="w-28">Password</Label>
+          <Input
+            type="password"
+            placeholder="Wallet password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <Button disabled={busy} onClick={onSend}>
+            {busy ? "Sending…" : "Send Token"}
+          </Button>
+          <Button variant="outline" disabled={busy} onClick={previewGas}>Preview Gas</Button>
+        </div>
+
+        {!!msg && <div className="text-xs font-mono break-all">{msg}</div>}
+      </CardContent>
+    </Card>
   );
 }
