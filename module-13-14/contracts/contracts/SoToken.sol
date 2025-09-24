@@ -8,13 +8,16 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Votes.sol";
 import "@openzeppelin/contracts/utils/Nonces.sol";
 
 contract SoToken is ERC20, ERC20Permit, ERC20Votes, Ownable2Step {
-    uint256 public availableSupply = 1_000_000e18; //1 million initial total supply (can be increased via governance)
+    uint256 public availableSupply = 1_000_000e18; //1 million initial total supply
+
+    event CapUpdated(uint256 oldCap, uint256 newCap);
     
     constructor(uint256 mintAmount) ERC20("SoToken", "SOT") ERC20Permit("SoToken") Ownable(msg.sender){
         _mint(msg.sender, mintAmount);
     }
 
     function mint(address to, uint256 amount) external onlyOwner{
+        require(totalSupply() + amount <= availableSupply, "Unable to mint any more tokens");
         _mint(to, amount);
     }
 
@@ -24,5 +27,12 @@ contract SoToken is ERC20, ERC20Permit, ERC20Votes, Ownable2Step {
 
     function nonces(address owner) public view override (ERC20Permit, Nonces) returns(uint256){
         return super.nonces(owner);
+    }
+
+    function increaseTotalSupply(uint256 newCap) external onlyOwner{
+        uint256 oldCap = availableSupply;
+        require(newCap > oldCap, "New cap must be greater");
+        availableSupply = newCap;
+        emit CapUpdated(oldCap, newCap);
     }
 }
