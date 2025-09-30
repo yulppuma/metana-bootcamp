@@ -20,10 +20,17 @@ contract MyPriceFeed{
         }
     }
 
-    function getDataFeed(address tokenFeed) public view returns (int256, uint8 dec) {
-        require (tokenFeed != address(0), "Bad addr");
+    function getDataFeed(address tokenFeed) public view returns (int256 answer, uint8 dec) {
+        if (tokenFeed == address(0)) revert InvalidFeedAddress(tokenFeed);
+        if (tokenFeed.code.length == 0) revert InvalidAggregator(tokenFeed);
         AggregatorV3Interface dataFeed = AggregatorV3Interface(tokenFeed);
-        (, int256 answer, , ,) = dataFeed.latestRoundData();
+        try dataFeed.latestRoundData()
+            returns (uint80, int256 a, uint256, uint256, uint80)
+        {
+            answer = a;
+        } catch {
+            revert InvalidAggregator(tokenFeed);
+        }
         return (answer, dataFeed.decimals());
     }
 }

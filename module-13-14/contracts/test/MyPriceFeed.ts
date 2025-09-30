@@ -8,8 +8,10 @@ describe("MyPriceFeed", function () {
   let myPriceFeed: any;
   let mockFeed: any;
   let mockFeed2: any;
+  let addr1: any;
 
   beforeEach(async () => {
+    [addr1] = await ethers.getSigners();
     //Deploy MyPriceFeed
     const factory = await ethers.getContractFactory("MyPriceFeed");
     myPriceFeed = await factory.deploy();
@@ -45,12 +47,24 @@ describe("MyPriceFeed", function () {
     expect(ethers.formatUnits(prices[1], decimals[1])).to.equal("1500.0");
   });
 
-  it("Should revert if incorrect price feed address is passed", async function(){
-    await expect(myPriceFeed.getDataFeed("0x0000000000000000000000000000000000000000")).to.be.revertedWith("Bad addr");
+  it("Should revert if 0 address is passed", async function(){
+    await expect(myPriceFeed.getDataFeed("0x0000000000000000000000000000000000000000")).to.be.revertedWithCustomError(myPriceFeed, "InvalidFeedAddress");
+  });
+
+  it("Should revert if EOA is passed", async function(){
+    await expect(myPriceFeed.getDataFeed(addr1.address)).to.be.revertedWithCustomError(myPriceFeed, "InvalidAggregator");
   });
 
   it("Should revert if incorrect price feed addresses are passed", async function(){
-    await expect(myPriceFeed.getBatchDataFeed(["0x0000000000000000000000000000000000000000"])).to.be.revertedWith("Bad addr");
+    await expect(myPriceFeed.getBatchDataFeed(["0x0000000000000000000000000000000000000000"])).to.be.revertedWithCustomError(myPriceFeed, "InvalidFeedAddress");
+  });
+
+  it("Should revert if wrong contract address is passed (code exists, wrong ABI)", async function(){
+    const Dummy = await ethers.getContractFactory("Counter");
+    const dummy = await Dummy.deploy();
+    await dummy.waitForDeployment();
+
+    await expect(myPriceFeed.getDataFeed(dummy.target)).to.be.revertedWithCustomError(myPriceFeed, "InvalidAggregator");
   });
 
   it("Should revert if price feed addresses passed are not greater than 0", async function(){
