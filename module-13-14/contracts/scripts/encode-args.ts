@@ -1,0 +1,65 @@
+import { ethers } from "ethers";
+import { network } from "hardhat";
+
+
+const FEEDS: string[] = [
+    "0xB0C712f98daE15264c8E26132BCC91C40aD4d5F9",
+    "0x5fb1616F78dA7aFC9FF79e0371741a747D2a7F22", 
+    "0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43", 
+    "0x38c8b98A2Cb36a55234323D7eCCD36ad3bFC5954", 
+    "0xd988B5d6E40A38D87d85491Da1110D2de904E245", 
+    "0x4b531A318B0e44B549F3b2f824721b3D0d51930A", 
+    "0xC32f0A9D70A34B9E7377C10FDAd88512596f61EA", 
+    "0x14866185B1962B63C3Ea9E03Bc1da838bab34C19", 
+    "0x694AA1769357215DE4FAC081bf1f309aDC325306", 
+    "0x1a81afB8146aeFfCFc5E50e8479e826E7D55b910",
+    "0x07A4307f42c4E20A26C06398E81406BEe037a8f5", 
+    "0x691589658B328941fEfA0b4d37936Dae64B7990b", 
+    "0x070bF128E88A4520b3EfA65AB1e4Eb6F0F9E6632", 
+    "0x91FAB41F5f3bE955963a986366edAcff1aaeaa83", 
+    "0x635A86F9fdD16Ff09A0701C305D3a845F1758b8E", 
+    "0xB677bfBc9B09a3469695f40477d05bc9BcB15F50", 
+    "0x5c13b249846540F81c093Bc342b5d963a7518145", 
+    "0x8A6af2B75F23831ADc973ce6288e5329F63D86c6", 
+    "0x42585eD362B3f1BCa95c640FdFf35Ef899212734", 
+    "0xc59E3633BAAC79493d908e63626716e204A45EdF", 
+    "0x7236e415beC6F9A1747e223528ef9E38A1d36699", 
+    "0x57020Ba11D61b188a1Fd390b108D233D87c06057", 
+    "0xc0F82A46033b8BdBA4Bb0B0e28Bc2006F64355bC", 
+    "0x8328e01902A47942Eecb9DBF97d6bF9dd3bd07E6", 
+    "0x6f7be09227d98Ce1Df812d5Bc745c0c775507E92", 
+    "0x98893037aA4462201A75cF483a60883f09c42537", 
+    "0xE38b0917888d0d5d8d03B7371d5214A1aF8e1892", 
+    "0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E", 
+    "0x55ec7c3ed0d7CB5DF4d3d8bfEd2ecaf28b4638fb", 
+    "0x90E422f6B8cB0bD178C0F84764ad790715cbc2aa", 
+    "0x5376B13E1622CB498E0E95F328fC7547e827fcC8", 
+    "0xc778354117Fd7c9280467E5b142D3259d993c0d5", 
+    "0x338E8556826a55A6cc04827ADB1EEcfd9Dbf3Ca7", 
+    "0xaaabb530434B0EeAAc9A42E25dbC6A22D7bE218E", 
+    "0x8d2712Aa66FC5Ee459B1B2Fd574Edc8042313EF4", 
+    "0xC5981F461d74c46eB4b0CF3f4Ec79f025573B0Ea", 
+    "0xAb9Ea51108f935dF6b060cEe68b3989C27cecC55"
+];
+
+const MAX_STALENESS: number = 21600;
+const INTERVAL: number = 60;
+const CADENCE_MODE: boolean = true;
+
+async function main() {
+
+    const encodedArgs: string = ethers.AbiCoder.defaultAbiCoder().encode(
+        ["address[]", "uint32", "uint32", "bool"],
+        [FEEDS, MAX_STALENESS, INTERVAL, CADENCE_MODE]
+    );
+    
+    console.log("--------------------------------------------------------------------------------");
+    console.log("ABI-Encoded Constructor Arguments for Etherscan (excluding '0x'):");
+    console.log(encodedArgs.slice(2)); 
+    console.log("--------------------------------------------------------------------------------");
+}
+
+main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+});

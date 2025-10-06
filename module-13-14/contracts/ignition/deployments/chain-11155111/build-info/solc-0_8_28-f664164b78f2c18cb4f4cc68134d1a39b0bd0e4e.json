@@ -1,0 +1,39 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-f664164b78f2c18cb4f4cc68134d1a39b0bd0e4e",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "userSourceNameMap": {
+    "contracts/SimpleFeedKeeper.sol": "project/contracts/SimpleFeedKeeper.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/SimpleFeedKeeper.sol": {
+        "content": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.28;\r\n\r\ninterface AggregatorV3Interface {\r\n    function latestRoundData()\r\n        external\r\n        view\r\n        returns (uint80, int256 answer, uint256, uint256 updatedAt, uint80);\r\n}\r\n\r\ninterface AutomationCompatibleInterface {\r\n    function checkUpkeep(bytes calldata) external returns (bool, bytes memory);\r\n    function performUpkeep(bytes calldata) external;\r\n}\r\n\r\n/**\r\n * @title SimpleFeedKeeper\r\n * @notice Checks one feed per run (round-robin). Two modes:\r\n *  - Exception-only: perform only when off-chain check sees a problem\r\n *  - Cadence: perform every `interval` seconds (still Alert only if problem)\r\n */\r\ncontract SimpleFeedKeeper is AutomationCompatibleInterface {\r\n    event Alert(address indexed feed, string reason, uint256 updatedAt);\r\n    event Tick(uint256 indexed runId, uint256 indexChecked);\r\n\r\n    address[] public feeds;\r\n    uint32   public maxStaleness;   // seconds\r\n    uint32   public interval;       // seconds between runs in cadence mode\r\n    bool     public cadenceMode;    // true = run every interval, false = exception-only\r\n\r\n    uint256  public cursor;         // which feed index to check next\r\n    uint256  public runCount;\r\n    uint256  public lastTick;       // last performUpkeep timestamp\r\n\r\n    constructor(\r\n        address[] memory _feeds,\r\n        uint32 _maxStalenessSeconds,        // e.g. 3600 (1h)\r\n        uint32 _intervalSeconds,            // e.g. 60 (1m) for demos; 0 to disable cadence\r\n        bool   _cadenceMode                 // true=cadence; false=exception-only\r\n    ) {\r\n        require(_feeds.length > 0, \"no feeds\");\r\n        feeds = _feeds;\r\n        maxStaleness = _maxStalenessSeconds > 0 ? _maxStalenessSeconds : 3600;\r\n        interval     = _intervalSeconds;\r\n        cadenceMode  = _cadenceMode;\r\n    }\r\n\r\n    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {\r\n        uint256 idx = cursor % feeds.length;\r\n\r\n        if (cadenceMode) {\r\n            // Run every `interval` seconds (if interval==0, behave like exception-only)\r\n            if (interval > 0 && block.timestamp < lastTick + interval) return (false, \"\");\r\n            return (true, abi.encode(idx)); // we'll do the health check on-chain\r\n        }\r\n        address feed = feeds[idx];\r\n        try AggregatorV3Interface(feed).latestRoundData() returns (\r\n            uint80, int256 answer, uint256, uint256 updatedAt, uint80\r\n        ) {\r\n            if (answer <= 0 || block.timestamp > updatedAt + maxStaleness) {\r\n                return (true, abi.encode(idx));\r\n            }\r\n            return (false, \"\");\r\n        } catch {\r\n            return (true, abi.encode(idx));\r\n        }\r\n    }\r\n\r\n    function performUpkeep(bytes calldata performData) external override {\r\n        uint256 idx = cursor % feeds.length;\r\n        if (performData.length == 32) {\r\n            uint256 proposed = abi.decode(performData, (uint256));\r\n            if (proposed < feeds.length) idx = proposed;\r\n        }\r\n\r\n        address feed = feeds[idx];\r\n\r\n        // Recheck on-chain; emit Alert only if there's a real issue now\r\n        try AggregatorV3Interface(feed).latestRoundData() returns (\r\n            uint80, int256 answer, uint256, uint256 updatedAt, uint80\r\n        ) {\r\n            if (answer <= 0) {\r\n                emit Alert(feed, \"non-positive-answer\", updatedAt);\r\n            } else if (block.timestamp > updatedAt + maxStaleness) {\r\n                emit Alert(feed, \"stale\", updatedAt);\r\n            }\r\n        } catch {\r\n            emit Alert(feed, \"call-reverted\", 0);\r\n        }\r\n\r\n        runCount += 1;\r\n        emit Tick(runCount, idx);\r\n\r\n        cursor = (idx + 1) % feeds.length;\r\n        lastTick = block.timestamp;\r\n    }\r\n}"
+      }
+    }
+  }
+}
