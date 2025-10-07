@@ -5,6 +5,7 @@ import { parseUnits, isAddress, maxUint256 } from "viem";
 import { CONTRACT_ADDRESSES } from "./chainConfig";
 import MyScanArtifact from "../utils/MyScan.json";
 import { ERC20_ABI } from "../utils/erc20Abi";
+import { getUsdFeedForSymbol } from "../utils/feeds";
 
 const MyScanAbi = Array.isArray(MyScanArtifact?.abi) ? MyScanArtifact.abi : MyScanArtifact;
 
@@ -21,15 +22,26 @@ export function MyScanProvider({ children }) {
   const myScan = contracts?.MyScan;
 
   // ---------- ETH send ----------
-  async function sendEth({ to, valueEth, memo, feed }) {
+  // Accept both amountEth and valueEth to avoid caller mismatch.
+  async function sendEth({ to, amountEth, valueEth, memo, feed }) {
     if (!walletClient || !isAddress(myScan)) throw new Error("Wallet or MyScan missing");
     if (!isAddress(to)) throw new Error("Bad recipient");
-    const valueWei = parseUnits(String(valueEth), 18);
+
+    // amount aliasing (panel sends amountEth)
+    const ethAmount = amountEth ?? valueEth;
+    if (ethAmount == null || ethAmount === "") throw new Error("Missing ETH amount");
+
+    const valueWei = parseUnits(String(ethAmount), 18);
+
+    // Auto-select ETH/USD feed if not provided
+    const ethFeed = feed && isAddress(feed) ? feed : getUsdFeedForSymbol("ETH");
+    if (!isAddress(ethFeed || "")) throw new Error("ETH/USD feed not configured");
+
     const hash = await walletClient.writeContract({
       address: myScan,
       abi: MyScanAbi,
       functionName: "sendEth",
-      args: [to, feed, memo || ""],
+      args: [to, ethFeed, memo || ""],
       value: valueWei,
     });
     await publicClient.waitForTransactionReceipt({ hash });
@@ -134,7 +146,7 @@ export function MyScanProvider({ children }) {
       getBalance,
       getAllowance,
       transferToken,
-      sendTokenAuto,  
+      sendTokenAuto,
     }),
     [myScan, owner, walletClient, publicClient]
   );

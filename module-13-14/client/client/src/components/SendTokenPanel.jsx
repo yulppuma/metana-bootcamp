@@ -1,16 +1,27 @@
-import React, { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
-import { isAddress } from "viem";
+import React, { useEffect, useMemo, useState } from "react";
+import { useAccount, usePublicClient } from "wagmi";
+import { isAddress, formatUnits } from "viem";
 import { useMyScan } from "../context/MyScanProvider";
 import { getUsdFeedForSymbol } from "../utils/feeds";
-import MyScanArtifact from "../utils/MyScan.json";
-import { ERC20_ABI } from "../utils/erc20Abi";
-import { usePublicClient, useWalletClient } from "wagmi";
-import { parseUnits, maxUint256 } from "viem";
 import { useActivity } from "../context/ActivityProvider";
+import { CONTRACT_ADDRESSES } from "../context/chainConfig";
+import MyPriceFeedArtifact from "../utils/MyPriceFeed.json";
+
+const MyPriceFeedAbi = Array.isArray(MyPriceFeedArtifact?.abi)
+  ? MyPriceFeedArtifact.abi
+  : MyPriceFeedArtifact;
+
+const INPUT_STYLE = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 10,
+  padding: "8px 12px",
+  height: 40,
+  boxSizing: "border-box",
+};
 
 export default function SendTokenPanel() {
-  const { address } = useAccount();
+  const { address, chainId } = useAccount();
+  const publicClient = usePublicClient();
   const { myScan, getTokenInfo, getBalance, getAllowance, sendTokenAuto } = useMyScan();
   const { ingestTx } = useActivity();
 
@@ -21,39 +32,84 @@ export default function SendTokenPanel() {
   const [feed, setFeed] = useState("");
 
   const [meta, setMeta] = useState({ symbol: "", decimals: 18, name: "" });
-  const [bal, setBal] = useState(0n);
-  const [allow, setAllow] = useState(0n);
+  const [balRaw, setBalRaw] = useState(0n);
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [usdValue, setUsdValue] = useState(null); // ≈ USD for typed amount
 
-  // Load token info/balance/allowance when token changes
+  // resolve MyPriceFeed for current chain
+  const resolvedChainId = chainId || 11155111; // Sepolia fallback
+  const current = CONTRACT_ADDRESSES[resolvedChainId] || CONTRACT_ADDRESSES[11155111];
+  const myPriceFeed = current?.MyPriceFeed;
+  const [btnHover, setBtnHover] = useState(false);
+  const [btnDown, setBtnDown] = useState(false);
+
+  const tokenKnown = isAddress(tokenAddr) && !!meta?.symbol;
+  const balanceStr = useMemo(
+    () => (balRaw ? formatUnits(balRaw, meta.decimals || 18) : "0"),
+    [balRaw, meta.decimals]
+  );
+
   useEffect(() => {
     (async () => {
       setStatus("");
       if (!isAddress(tokenAddr) || !address) {
         setMeta({ symbol: "", decimals: 18, name: "" });
-        setBal(0n);
-        setAllow(0n);
+        setBalRaw(0n);
+        setFeed("");
+        setUsdValue(null);
         return;
       }
       try {
         const info = await getTokenInfo(tokenAddr);
         setMeta(info);
-        const [b, a] = await Promise.all([
+
+        const [b] = await Promise.all([
           getBalance(tokenAddr, address),
-          getAllowance(tokenAddr, address),
+          getAllowance(tokenAddr, address).catch(() => 0n),
         ]);
-        setBal(b);
-        setAllow(a);
-        // auto-fill feed from "<SYM> / USD" if present
+        setBalRaw(b);
+
         const f = getUsdFeedForSymbol(info.symbol);
-        if (f && !feed) setFeed(f);
+        setFeed(f || "");
+        setUsdValue(null);
       } catch (e) {
         setStatus(`Failed to load token info: ${e?.message || e}`);
+        setFeed("");
+        setUsdValue(null);
       }
     })();
   }, [tokenAddr, address]);
+
+  useEffect(() => {
+    let stopped = false;
+    async function updateUsd() {
+      if (!Number(amount) || !isAddress(myPriceFeed || "")) {
+        setUsdValue(null);
+        return;
+      }
+      if (!feed || !isAddress(feed)) {
+        setUsdValue(null);
+        return;
+      }
+      try {
+        const [ans, dec] = await publicClient.readContract({
+          address: myPriceFeed,
+          abi: MyPriceFeedAbi,
+          functionName: "getDataFeed",
+          args: [feed],
+        });
+        const unitUsd = Number(ans) / 10 ** Number(dec);
+        const num = parseFloat(amount);
+        if (!stopped) setUsdValue(!isNaN(num) ? num * unitUsd : null);
+      } catch {
+        if (!stopped) setUsdValue(null);
+      }
+    }
+    updateUsd();
+    return () => { stopped = true; };
+  }, [amount, feed, myPriceFeed, publicClient]);
 
   async function onSend() {
     setStatus("");
@@ -61,7 +117,7 @@ export default function SendTokenPanel() {
     if (!isAddress(to)) return setStatus("Enter a valid recipient address.");
     if (!Number(amount)) return setStatus("Enter a valid amount.");
     if (!myScan) return setStatus("MyScan address missing.");
-    if (!feed || !isAddress(feed)) return setStatus("Provide a valid Chainlink feed address (e.g. <SYM> / USD).");
+    if (!feed || !isAddress(feed)) return setStatus("No price feed available for this token.");
 
     setBusy(true);
     try {
@@ -69,15 +125,12 @@ export default function SendTokenPanel() {
       const txHash = await sendTokenAuto({ token: tokenAddr, to, amount, memo, feed });
       setStatus(`Sent ${amount} ${meta.symbol} • tx: ${txHash.slice(0, 10)}…`);
 
-      // Immediately ingest and append freshly emitted PaymentStamped from this tx
       try { await ingestTx(txHash); } catch {}
-
-      // clear amount/memo & refresh balance/allowance
       setAmount("");
       setMemo("");
-      const [b, a] = await Promise.all([getBalance(tokenAddr, address), getAllowance(tokenAddr, address)]);
-      setBal(b);
-      setAllow(a);
+      const b = await getBalance(tokenAddr, address);
+      setBalRaw(b);
+      setUsdValue(null);
     } catch (e) {
       setStatus(`Send failed: ${e?.shortMessage || e?.message || e}`);
     } finally {
@@ -86,75 +139,126 @@ export default function SendTokenPanel() {
   }
 
   return (
-    <div className="rounded-xl border p-4">
-      <h3 className="font-semibold mb-3">Send ERC-20</h3>
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
+      {/* Header to match SendEthPanel */}
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>Send Token</div>
 
-      <label className="block text-sm mb-1">Token address</label>
-      <input
-        className="w-full border rounded px-3 py-2 mb-3"
-        placeholder="0x… (ERC-20)"
-        value={tokenAddr}
-        onChange={(e) => setTokenAddr(e.target.value.trim())}
-        spellCheck={false}
-      />
-
-      {meta.symbol ? (
-        <div className="text-sm text-gray-600 mb-3">
-          <div><b>{meta.name || meta.symbol}</b> ({meta.symbol}) • decimals: {meta.decimals}</div>
-        </div>
-      ) : null}
-
-      <label className="block text-sm mb-1">Recipient</label>
-      <input
-        className="w-full border rounded px-3 py-2 mb-3"
-        placeholder="0x…"
-        value={to}
-        onChange={(e) => setTo(e.target.value.trim())}
-        spellCheck={false}
-      />
-
-      <label className="block text-sm mb-1">Amount ({meta.symbol || "tokens"})</label>
-      <input
-        className="w-full border rounded px-3 py-2 mb-3"
-        placeholder="0.0"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-        inputMode="decimal"
-      />
-
-      <label className="block text-sm mb-1">Memo (optional)</label>
-      <input
-        className="w-full border rounded px-3 py-2 mb-3"
-        placeholder="For lunch 🌯"
-        value={memo}
-        onChange={(e) => setMemo(e.target.value)}
-      />
-
-      <label className="block text-sm mb-1">Price feed address (Chainlink)</label>
-      <input
-        className="w-full border rounded px-3 py-2 mb-3"
-        placeholder="0x… (e.g., USDC / USD)"
-        value={feed}
-        onChange={(e) => setFeed(e.target.value.trim())}
-        spellCheck={false}
-      />
-
-      <div className="flex gap-8 text-xs text-gray-600 mb-3">
-        <div>Balance: {bal.toString()}</div>
-        <div>Allowance → MyScan: {allow.toString()}</div>
+      {/* Token Address */}
+      <div style={{ marginBottom: 8 }}>
+        <input
+          placeholder="Token address (0x…)"
+          value={tokenAddr}
+          onChange={(e) => setTokenAddr(e.target.value.trim())}
+          spellCheck={false}
+          style={{ ...INPUT_STYLE, width: "100%" }}
+        />
+        {tokenKnown && (
+          <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+            {meta.name || meta.symbol} ({meta.symbol}) • decimals: {meta.decimals}
+          </div>
+        )}
       </div>
 
-      <div className="flex gap-2">
+      {/* Main inputs row: To / Amount / Memo */}
+      <div
+        style={{
+          display: "grid",
+          gap: 8,
+          gridTemplateColumns: "1fr 1fr 1fr",
+          marginBottom: 8,
+          alignItems: "start",
+        }}
+      >
+        <input
+          placeholder="To (0x…)"
+          value={to}
+          onChange={(e) => setTo(e.target.value.trim())}
+          spellCheck={false}
+          style={{ ...INPUT_STYLE }}
+        />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <input
+            placeholder={`Amount (${meta.symbol || "tokens"})`}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            inputMode="decimal"
+            style={{ ...INPUT_STYLE, width: "100%" }}
+          />
+          <div style={{ height: 16, fontSize: 12, color: "#6b7280" }}>
+            {usdValue != null ? `≈ $${usdValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "\u00A0"}
+          </div>
+        </div>
+
+        <input
+          placeholder="Memo"
+          value={memo}
+          onChange={(e) => setMemo(e.target.value)}
+          style={{ ...INPUT_STYLE }}
+        />
+      </div>
+
+      {/* Footer row: read-only feed (left) + send button (right) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <input
+            value={feed || ""}
+            readOnly
+            disabled
+            title={feed || "No USD feed linked"}
+            style={{
+              ...INPUT_STYLE,
+              width: "100%",
+              fontSize: 12,
+              color: feed ? "#111827" : "#9CA3AF",
+              background: "#F9FAFB",
+              cursor: "not-allowed",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          />
+          <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+            {tokenKnown ? (
+              <>Balance: {balanceStr} {meta.symbol}</>
+            ) : (
+              <>Enter a token address to load balance</>
+            )}
+          </div>
+        </div>
+
         <button
           onClick={onSend}
           disabled={busy}
-          className="px-3 py-2 rounded-lg border disabled:opacity-60"
+          onMouseEnter={() => setBtnHover(true)}
+          onMouseLeave={() => { setBtnHover(false); setBtnDown(false); }}
+          onMouseDown={() => setBtnDown(true)}
+          onMouseUp={() => setBtnDown(false)}
+          style={{
+            flexShrink: 0,
+            padding: "6px 12px",
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
+            background: "white",
+            whiteSpace: "nowrap",
+            cursor: busy ? "default" : "pointer",
+            opacity: busy ? 0.6 : 1,
+            transition: "transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease, border-color 120ms ease",
+            transform: btnDown ? "translateY(1px)" : "translateY(0)",
+            boxShadow: btnHover && !busy ? "0 2px 10px rgba(0,0,0,0.06)" : "none",
+            borderColor: btnHover && !busy ? "#d1d5db" : "#e5e7eb",
+          }}
         >
-          {busy ? "Working…" : "Send"}
+          {busy ? "Sending…" : "Send"}
         </button>
       </div>
 
-      {status ? <div className="mt-3 text-sm">{status}</div> : null}
+      {/* Status */}
+      {status && (
+        <div style={{ fontSize: 12, marginTop: 8, color: "#374151" }}>
+          {status}
+        </div>
+      )}
     </div>
   );
 }

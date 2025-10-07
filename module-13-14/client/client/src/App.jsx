@@ -1,41 +1,41 @@
 import React from "react";
+import { useAccount } from "wagmi";
 import ConnectBar from "./components/ConnectBar";
-import PriceTicker from "./components/PriceTicker";
 import SendEthPanel from "./components/SendEthPanel";
 import ActivityFeed from "./components/ActivityFeed";
-import PriceNowButton from "./components/PriceNowButton";
+import SendTokenPanel from "./components/SendTokenPanel";
+import TokenBalances from "./components/TokenBalances";
+import AddFriendForm from "./components/AddFriendForm";
 import { MyScanProvider } from "./context/MyScanProvider";
 import { ActivityProvider } from "./context/ActivityProvider";
-import SendTokenPanel from "./components/SendTokenPanel";
-import LoadOlderButton from "./components/LoadOlderButton";
-import TokenBalances from "./components/TokenBalances";
 import { BalancesProvider } from "./context/BalancesProvider";
-
+import { FriendsProvider } from "./context/FriendsProvider";
 export default function App() {
+  const { address, chainId } = useAccount();
+  const keySuffix = `${address || "none"}:${chainId || "0"}`;
+
   return (
     <div style={{ maxWidth: 960, margin: "0 auto", padding: 24 }}>
       <ConnectBar />
-      <MyScanProvider>
-        <BalancesProvider>
-          <ActivityProvider>
-            <div style={{ display: "grid", gap: 16, gridTemplateColumns: "2fr 1fr" }}>
-              <div style={{ display: "grid", gap: 16 }}>
-                {/* your existing panels */}
-                <SendEthPanel />
-                <SendTokenPanel />
-                <ActivityFeed />
-                {/* LoadOlderButton if you added it */}
+      <FriendsProvider key={`friends:${keySuffix}`}>
+        <MyScanProvider>
+          <BalancesProvider>
+            <ActivityProvider>
+              <div style={{ display: "grid", gap: 16, gridTemplateColumns: "2fr 1fr" }}>
+                <div style={{ display: "grid", gap: 16 }}>
+                  <AddFriendForm />
+                  <SendEthPanel />
+                  <SendTokenPanel />
+                  <ActivityFeed />
+                </div>
+                <div style={{ display: "grid", gap: 16 }}>
+                  <TokenBalances />
+                </div>
               </div>
-              <div style={{ display: "grid", gap: 16 }}>
-                {/* New: token balances */}
-                <TokenBalances /* onSelectToken={(addr) => ...prefill your SendTokenPanel...} */ />
-                {/* your existing price widgets/buttons */}
-                {/* <PriceNowButton /> */}
-              </div>
-            </div>
-          </ActivityProvider>
-        </BalancesProvider>
-      </MyScanProvider>
+            </ActivityProvider>
+          </BalancesProvider>
+        </MyScanProvider>
+      </FriendsProvider>
     </div>
   );
 }

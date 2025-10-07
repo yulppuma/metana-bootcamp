@@ -1,3 +1,4 @@
+// src/context/BalancesProvider.jsx
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
 import { formatUnits, isAddress, parseAbiItem, createPublicClient, http } from "viem";
@@ -6,6 +7,7 @@ import { TOKENS_BY_CHAIN } from "../utils/tokenList";
 import { sepolia } from "viem/chains";
 import { CONTRACT_ADDRESSES } from "./chainConfig";
 import { getUsdFeedForSymbol } from "../utils/feeds";
+import { useActivity } from "./ActivityProvider";
 
 // Topic-filtered ERC-20 Transfer
 const TRANSFER_EVENT = parseAbiItem(
@@ -28,6 +30,7 @@ export const useBalances = () => useContext(Bctx);
 export function BalancesProvider({ children }) {
   const { address: owner, chainId } = useAccount();
   const publicClient = usePublicClient();
+  const { refreshUsdNow } = useActivity(); // <-- will be called after price updates
 
   const logsClient = React.useMemo(() => {
     const cid = (chainId || 11155111);
@@ -35,7 +38,6 @@ export function BalancesProvider({ children }) {
       const url = import.meta.env.VITE_SEPOLIA_LOGS_RPC || "https://sepolia.drpc.org";
       return createPublicClient({ chain: sepolia, transport: http(url) });
     }
-    // fallback: use wagmi's client
     return publicClient;
   }, [chainId, publicClient]);
 
@@ -87,7 +89,6 @@ export function BalancesProvider({ children }) {
     if (!Array.isArray(feeds) || feeds.length === 0) return new Map();
     if (!isAddress(myPriceFeed || "")) return new Map();
 
-    // Try batch first
     try {
       // MyPriceFeed.getBatchDataFeed(address[] feeds) returns (int256[] answers, uint8[] decimals)
       const [answers, decs] = await publicClient.readContract({
@@ -230,20 +231,17 @@ export function BalancesProvider({ children }) {
         }
       }
 
-      // 5) Attach USD pricing (ETH + each token, if we have a feed)
-      const feeds = new Set();
-      // ETH baseline
-      const ethUsd = getUsdFeedForSymbol("ETH");
-      if (isAddress(ethUsd || "")) feeds.add(String(ethUsd).toLowerCase());
-      // Tokens by symbol
+      // 5) Attach USD pricing ONLY for assets with balance > 0
+      // Build the set of feeds from the rows we actually display (ETH if >0, tokens with >0)
+      const feedKeys = new Set();
       for (const r of rows) {
         const f = getUsdFeedForSymbol(r.symbol);
-        if (isAddress(f || "")) feeds.add(String(f).toLowerCase());
+        if (isAddress(f || "")) feedKeys.add(String(f).toLowerCase());
       }
 
       let priceMap = new Map();
-      if (feeds.size > 0) {
-        priceMap = await fetchNowPrices(Array.from(feeds));
+      if (feedKeys.size > 0) {
+        priceMap = await fetchNowPrices(Array.from(feedKeys));
       }
 
       const withUsd = rows.map((r) => {
@@ -257,6 +255,9 @@ export function BalancesProvider({ children }) {
       // 6) Sort by balance desc and publish
       withUsd.sort((a, b) => b.balance - a.balance);
       setBalances(withUsd);
+
+      // 7) Also refresh USD "now" in Recent Activity so both panels are in sync
+      try { await refreshUsdNow?.(); } catch {}
     } finally {
       setLoading(false);
     }

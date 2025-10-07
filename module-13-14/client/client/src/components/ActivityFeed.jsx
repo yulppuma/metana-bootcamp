@@ -1,133 +1,162 @@
 import React from "react";
+import { useAccount } from "wagmi";
 import { useActivity } from "../context/ActivityProvider";
-import { isAddress } from "viem";
+import { useFriends } from "../context/FriendsProvider";
 
-const ZERO = "0x0000000000000000000000000000000000000000";
+function shortAddr(a) {
+  if (!a) return "";
+  return a.slice(0, 6) + "…" + a.slice(-4);
+}
 
-const shortAddr = (addr) =>
-  isAddress(addr || "") ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : "—";
+function AddrWithName({ addr }) {
+  const { getName } = useFriends();
+  if (!addr) return null;
+  const name = getName(addr);
+  const short = shortAddr(addr);
+  return (
+    <span title={addr} style={{ fontWeight: 500 }}>
+      {name ? `${name} (${short})` : short}
+    </span>
+  );
+}
 
-const fmtUSD = (n) => {
-  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  const digits =
-    abs >= 1000 ? 2 :
-    abs >= 10   ? 2 :
-    abs >= 1    ? 3 : 4;
-  return n.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
-};
-
-const fmtDelta = (n) => {
-  if (typeof n !== "number" || !Number.isFinite(n)) return "";
-  const sign = n > 0 ? "+" : n < 0 ? "−" : "";
-  const val = Math.abs(n);
-  const abs = Math.abs(n);
-  const digits =
-    abs >= 1000 ? 2 :
-    abs >= 10   ? 2 :
-    abs >= 1    ? 3 : 4;
-  return `${sign}${val.toLocaleString(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })}`;
-};
-
-const fmtPct = (n) => {
-  if (typeof n !== "number" || !Number.isFinite(n)) return "";
-  const sign = n > 0 ? "+" : n < 0 ? "−" : "";
-  const val = Math.abs(n);
-  return `${sign}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
-};
+function AmountCell({ amountStr, symbol, totalUsdThen, totalUsdNow }) {
+  const hasNow = typeof totalUsdNow === "number" && !Number.isNaN(totalUsdNow);
+  const hasThen = typeof totalUsdThen === "number" && !Number.isNaN(totalUsdThen);
+  return (
+    <div style={{ textAlign: "right" }}>
+      <div style={{ fontWeight: 700 }}>
+        {amountStr} {symbol || ""}
+      </div>
+      <div style={{ fontSize: 12, color: "#6b7280" }}>
+        {hasThen ? `then ≈ $${totalUsdThen.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ""}
+        {hasNow ? `${hasThen ? " • " : ""}now ≈ $${totalUsdNow.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : ""}
+        {!hasThen && !hasNow ? "\u00A0" : ""}
+      </div>
+    </div>
+  );
+}
 
 export default function ActivityFeed() {
-  const { items } = useActivity();
+  const { address } = useAccount();
+  const activeLc = address ? address.toLowerCase() : null;
+
+  const {
+    items,
+    nowRefreshing,
+    refreshUsdNow,
+    loadOlderHistory,
+    loadingOlder,
+    canLoadOlder,
+  } = useActivity();
+
+  const visible = React.useMemo(() => {
+    if (!activeLc) return [];
+    return (items || []).filter((r) => {
+      const p = r?.payer ? String(r.payer).toLowerCase() : "";
+      const q = r?.payee ? String(r.payee).toLowerCase() : "";
+      return p === activeLc || q === activeLc;
+    });
+  }, [items, activeLc]);
 
   return (
-    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>Recent Activity</div>
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "#fff" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div style={{ fontWeight: 600 }}>
+          Recent Activity{activeLc ? ` — ${shortAddr(activeLc)}` : ""}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={refreshUsdNow}
+            disabled={nowRefreshing}
+            style={{
+              fontSize: 12,
+              border: "1px solid #e5e7eb",
+              borderRadius: 10,
+              padding: "4px 8px",
+              background: "white",
+              opacity: nowRefreshing ? 0.6 : 1,
+              cursor: nowRefreshing ? "default" : "pointer",
+              transition: "box-shadow 120ms ease, border-color 120ms ease",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.06)")}
+            onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
+          >
+            {nowRefreshing ? "Refreshing…" : "Refresh Prices"}
+          </button>
+          {canLoadOlder && (
+            <button
+              onClick={() => loadOlderHistory()}
+              disabled={loadingOlder}
+              style={{
+                fontSize: 12,
+                border: "1px solid #e5e7eb",
+                borderRadius: 10,
+                padding: "4px 8px",
+                background: "white",
+                opacity: loadingOlder ? 0.6 : 1,
+                cursor: loadingOlder ? "default" : "pointer",
+                transition: "box-shadow 120ms ease, border-color 120ms ease",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 2px 10px rgba(0,0,0,0.06)")}
+              onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
+            >
+              {loadingOlder ? "Loading…" : "Load Older"}
+            </button>
+          )}
+        </div>
+      </div>
 
-      {(!items || items.length === 0) && (
-        <div style={{ fontSize: 13, color: "#6b7280" }}>No recent activity.</div>
+      {(!visible || visible.length === 0) && (
+        <div style={{ fontSize: 13, color: "#6b7280" }}>
+          {activeLc ? `No activity yet for ${shortAddr(activeLc)}.` : "Connect a wallet to see activity."}
+        </div>
       )}
 
-      {items?.map((it) => {
-        const when =
-          it?.updatedAt != null
-            ? new Date(Number(it.updatedAt) * 1000).toLocaleString()
-            : "—";
-        const to = shortAddr(it?.payee);
-        const from = shortAddr(it?.payer);
-        const sym =
-          it?.assetSymbol ||
-          (it?.asset && String(it.asset).toLowerCase() !== ZERO ? "TOKEN" : "ETH");
-        const amountStr = it?.amountStr ?? "0";
-
-        const thenTotal = it?.totalUsdThen ?? null;
-        const nowTotal  = it?.totalUsdNow  ?? null;
-
-        const delta = (thenTotal != null && nowTotal != null) ? nowTotal - thenTotal : null;
-        const pct   = (delta != null && thenTotal) ? (delta / thenTotal) * 100 : null;
-
-        const tx = it?.txHash || "";
-        const key = tx ? `${tx}-${it?.logIndex ?? 0}` : Math.random();
-
-        return (
-          <div
-            key={key}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr auto",
-              gap: 12,
-              padding: "12px 0",
-              borderBottom: "1px solid #eee",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>{when}</div>
-              <div style={{ fontWeight: 600 }}>
-                {amountStr} {sym}{" "}
-                <span style={{ fontWeight: 400, color: "#6b7280" }}>
-                  ({from} → {to})
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>
-                Memo: {it?.memo?.trim() ? it.memo : "—"}
-              </div>
+      {visible?.map((it) => (
+        <div
+          key={`${it.txHash}-${it.logIndex}`}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.2fr 1fr",
+            gap: 12,
+            padding: "10px 0",
+            borderBottom: "1px solid #eee",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 2 }}>
+              <AddrWithName addr={it.payer} /> → <AddrWithName addr={it.payee} />
             </div>
-
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Value</div>
-              <div style={{ fontWeight: 600 }}>
-                {fmtUSD(thenTotal)} <span style={{ color: "#6b7280" }}>→</span> {fmtUSD(nowTotal)}
+            {it.memo && (
+              <div style={{ fontSize: 12, color: "#374151" }}>
+                {it.memo}
               </div>
-              {(delta != null) && (
-                <div style={{ marginTop: 4, fontSize: 12, color: delta >= 0 ? "#16a34a" : "#dc2626" }}>
-                  {fmtDelta(delta)} {pct != null ? `(${fmtPct(pct)})` : ""}
-                </div>
-              )}
-              {tx && (
-                <div style={{ marginTop: 6 }}>
-                  <a
-                    style={{ fontSize: 12 }}
-                    href={`https://sepolia.etherscan.io/tx/${tx}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    View on Etherscan
-                  </a>
-                </div>
+            )}
+            <div style={{ fontSize: 12, marginTop: 4 }}>
+              <a
+                href={`https://sepolia.etherscan.io/tx/${it.txHash}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {it.txHash.slice(0, 10)}…
+              </a>
+              {it.updatedAt && (
+                <span style={{ color: "#6b7280" }}>
+                  {" "}| {new Date(it.updatedAt * 1000).toLocaleString()}
+                </span>
               )}
             </div>
           </div>
-        );
-      })}
+
+          <AmountCell
+            amountStr={it.amountStr}
+            symbol={it.assetSymbol}
+            totalUsdThen={it.totalUsdThen}
+            totalUsdNow={it.totalUsdNow}
+          />
+        </div>
+      ))}
     </div>
   );
 }

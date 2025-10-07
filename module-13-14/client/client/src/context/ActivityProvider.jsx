@@ -1,16 +1,6 @@
-// src/context/ActivityProvider.jsx
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, {createContext, useContext, useEffect, useMemo, useRef, useState,} from "react";
 import { useAccount, usePublicClient } from "wagmi";
 import { CONTRACT_ADDRESSES } from "./chainConfig";
-
-// Only need MyPriceFeed ABI for USD "now"; logs decoded via parseAbiItem
 import MyPriceFeedArtifact from "../utils/MyPriceFeed.json";
 import { ERC20_ABI } from "../utils/erc20Abi";
 import {
@@ -35,9 +25,9 @@ const PAYMENT_STAMPED = parseAbiItem(
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 // knobs
-const SAFETY_CONFIRMATIONS = 6n;   // avoid the very tip
-const CHUNK = 2048n;               // fast slices (topic-filtered)
-const SEED_WINDOW = 8192n;         // backfill on first load
+const SAFETY_CONFIRMATIONS = 6n;
+const CHUNK = 2048n;
+const SEED_WINDOW = 8192n;
 
 const Actx = createContext({
   items: [],
@@ -52,6 +42,7 @@ export const useActivity = () => useContext(Actx);
 
 export function ActivityProvider({ children }) {
   const { chainId, address: owner } = useAccount();
+  const ownerLc = owner ? owner.toLowerCase() : null;
   const publicClient = usePublicClient();
 
   const resolvedChainId = chainId || 11155111; // Sepolia fallback
@@ -67,8 +58,7 @@ export function ActivityProvider({ children }) {
   const logsClient = useMemo(() => {
     if (resolvedChainId === 11155111) {
       const url =
-        import.meta.env.VITE_SEPOLIA_LOGS_RPC ||
-        "https://sepolia.drpc.org";
+        import.meta.env.VITE_SEPOLIA_LOGS_RPC || "https://sepolia.drpc.org";
       return createPublicClient({ chain: sepolia, transport: http(url) });
     }
     return publicClient;
@@ -78,7 +68,7 @@ export function ActivityProvider({ children }) {
   const itemsRef = useRef(items);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
-  // cache token metadata { [addrLower]: {symbol, decimals} }
+  // token metadata cache
   const tokenMetaRef = useRef({});
 
   const [nowRefreshing, setNowRefreshing] = useState(false);
@@ -88,6 +78,16 @@ export function ActivityProvider({ children }) {
   const earliestSeenBlockRef = useRef(null);  // bigint
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [canLoadOlder, setCanLoadOlder] = useState(true);
+
+  // Always clear on mount (and because App.jsx remounts us on wallet/chain change)
+  useEffect(() => {
+    setItems([]);
+    itemsRef.current = [];
+    tokenMetaRef.current = {};
+    lastFetchedBlockRef.current = null;
+    earliestSeenBlockRef.current = null;
+    setNowMeta({ updatedAt: null });
+  }, []); // remount = reset
 
   const sortNewestFirst = (list) =>
     [...list].sort((a, b) => {
@@ -171,7 +171,6 @@ export function ActivityProvider({ children }) {
         return sortNewestFirst(Array.from(map.values())).slice(0, 400);
       });
 
-      // Bump block pointers so polling doesn’t miss or wait long
       if (receipt.blockNumber != null) {
         const bn = receipt.blockNumber;
         if (lastFetchedBlockRef.current == null || bn > lastFetchedBlockRef.current) {
@@ -228,9 +227,9 @@ export function ActivityProvider({ children }) {
   }
 
   // ---------- Topic-filtered paging for wallet (fast) ----------
-  async function pageLogsMine(from, to) {
+  async function pageLogsMine(ownerAddr, from, to) {
     const out = [];
-    if (!isAddress(myScan || "") || !isAddress(owner || "")) return out;
+    if (!isAddress(myScan || "") || !isAddress(ownerAddr || "")) return out;
     if (from > to) return out;
 
     for (let cur = from; cur <= to; ) {
@@ -241,14 +240,14 @@ export function ActivityProvider({ children }) {
           logsClient.getLogs({
             address: myScan,
             event: PAYMENT_STAMPED,
-            args: { payer: owner },   // topic[1] = owner
+            args: { payer: ownerAddr },   // topic[1] = owner
             fromBlock: cur,
             toBlock: hi,
           }),
           logsClient.getLogs({
             address: myScan,
             event: PAYMENT_STAMPED,
-            args: { payee: owner },   // topic[2] = owner
+            args: { payee: ownerAddr },   // topic[2] = owner
             fromBlock: cur,
             toBlock: hi,
           }),
@@ -281,7 +280,7 @@ export function ActivityProvider({ children }) {
       const from = safeTip > SEED_WINDOW ? safeTip - SEED_WINDOW : myScanStartBlock;
 
       try {
-        const raw = await pageLogsMine(from, safeTip);
+        const raw = await pageLogsMine(owner, from, safeTip);
         const shaped = await Promise.all(raw.map(shapeEvent));
         const enriched = await enrichRows(sortNewestFirst(shaped).slice(0, 200));
         if (!stopped) setItems(enriched);
@@ -310,7 +309,7 @@ export function ActivityProvider({ children }) {
 
         const fromFwd = last + 1n;
         try {
-          const raw = await pageLogsMine(fromFwd, safeTipNow);
+          const raw = await pageLogsMine(owner, fromFwd, safeTipNow);
           if (raw.length > 0) {
             const shaped = await Promise.all(raw.map(shapeEvent));
             const enrichedFresh = await enrichRows(sortNewestFirst(shaped));
@@ -337,24 +336,23 @@ export function ActivityProvider({ children }) {
   // ---------- Robust USD “Now” refresh (batch + per-feed fallback) ----------
   async function fetchNowPrices(feeds) {
     if (!Array.isArray(feeds) || feeds.length === 0) return new Map();
-    // Try batch first
+    const feedsLc = feeds.map(f => String(f).toLowerCase());
     try {
       const [answers, decs] = await publicClient.readContract({
         address: myPriceFeed,
         abi: MyPriceFeedAbi,
         functionName: "getBatchDataFeed",
-        args: [feeds],
+        args: [feedsLc],
       });
       const m = new Map();
-      for (let i = 0; i < feeds.length; i++) {
+      for (let i = 0; i < feedsLc.length; i++) {
         const unit = Number(answers[i]) / 10 ** Number(decs[i]);
-        m.set(feeds[i], unit);
+        m.set(feedsLc[i], unit);
       }
       return m;
     } catch {
-      // Fallback: per-feed calls
       const settled = await Promise.allSettled(
-        feeds.map((f) =>
+        feedsLc.map((f) =>
           publicClient
             .readContract({
               address: myPriceFeed,
@@ -382,8 +380,6 @@ export function ActivityProvider({ children }) {
     setNowRefreshing(true);
     try {
       const rows = itemsRef.current;
-
-      // feeds from current rows
       const rowFeeds = Array.from(
         new Set(
           rows
@@ -391,18 +387,11 @@ export function ActivityProvider({ children }) {
             .filter(Boolean)
         )
       );
-
-      // ALWAYS include baseline ETH/USD so refresh works on a cold start
       const ethUsd = getUsdFeedForSymbol("ETH");
       const baseline = isAddress(ethUsd) ? [String(ethUsd).toLowerCase()] : [];
-
       const feeds = Array.from(new Set([...baseline, ...rowFeeds]));
       if (feeds.length === 0) { setNowMeta({ updatedAt: Date.now() }); return; }
-
-      // call robust fetcher
       const nowMap = await fetchNowPrices(feeds);
-
-      // push "now" pricing into visible rows
       setItems((prev) =>
         prev.map((r) => {
           const key = r.feed ? String(r.feed).toLowerCase() : null;
@@ -413,7 +402,6 @@ export function ActivityProvider({ children }) {
         })
       );
 
-      // also stash ETH/USD into nowMeta for any widgets reading it
       const ethUsdKey = baseline[0] || null;
       const ethUsdVal = ethUsdKey ? nowMap.get(ethUsdKey) ?? null : null;
 
@@ -423,7 +411,7 @@ export function ActivityProvider({ children }) {
     }
   };
 
-  // fire a single boot-time refresh so ETH/USD shows immediately
+  // Boot-time refresh so ETH/USD shows immediately
   useEffect(() => {
     if (isAddress(myPriceFeed || "")) {
       refreshUsdNow();
@@ -447,9 +435,9 @@ export function ActivityProvider({ children }) {
       lastFeedsKeyRef.current = key;
       refreshUsdNow();
     }
-  }, [items.length]); // re-evaluate when count changes (also covers first load)
+  }, [items.length]);
 
-  // ---------- Manual: Load older (still topic-filtered to you) ----------
+  // ---------- Manual: Load older ----------
   const loadingOlderRef = useRef(false);
   const loadOlderHistory = async (blocksWindow = 12288n) => {
     if (loadingOlderRef.current || loadingOlder) return;
@@ -472,7 +460,7 @@ export function ActivityProvider({ children }) {
       const to = earliest - 1n;
       const from = to > blocksWindow ? to - blocksWindow : myScanStartBlock;
 
-      const raw = await pageLogsMine(from, to);
+      const raw = await pageLogsMine(owner, from, to);
       const shaped = await Promise.all(raw.map(shapeEvent));
       const enriched = await enrichRows(sortNewestFirst(shaped));
 
