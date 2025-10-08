@@ -1,0 +1,44 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-ebcafa1712786a002a5c250af8b3b3da1dfddabe",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "userSourceNameMap": {
+    "contracts/MyPriceFeed.sol": "project/contracts/MyPriceFeed.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": [
+        "project/:@chainlink/contracts/=npm/@chainlink/contracts@1.4.0/"
+      ]
+    },
+    "sources": {
+      "npm/@chainlink/contracts@1.4.0/src/v0.8/shared/interfaces/AggregatorV3Interface.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\n// solhint-disable-next-line interface-starts-with-i\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  function getRoundData(\n    uint80 _roundId\n  ) external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n\n  function latestRoundData()\n    external\n    view\n    returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n}\n"
+      },
+      "project/contracts/MyPriceFeed.sol": {
+        "content": "// SPDX-License-Identifier: UNLICENSED\r\npragma solidity ^0.8.28;\r\n\r\nimport \"@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol\";\r\n\r\ncontract MyPriceFeed{\r\n\r\n    error InvalidFeedAddress(address feed);\r\n    error InvalidAggregator(address feed);\r\n\r\n    function getBatchDataFeed(address[] calldata feeds) external view returns (int256[] memory answers, uint8[] memory decimals){\r\n        uint256 n = feeds.length;\r\n        require(n > 0, \"No price feed\");\r\n        answers = new int256[](n);\r\n        decimals = new uint8[](n);\r\n        unchecked {\r\n            for (uint256 i = 0; i < n; ++i){\r\n                (answers[i], decimals[i]) = getDataFeed(feeds[i]);\r\n            }\r\n        }\r\n    }\r\n\r\n    function getDataFeed(address tokenFeed) public view returns (int256 answer, uint8 dec) {\r\n        if (tokenFeed == address(0)) revert InvalidFeedAddress(tokenFeed);\r\n        if (tokenFeed.code.length == 0) revert InvalidAggregator(tokenFeed);\r\n        AggregatorV3Interface dataFeed = AggregatorV3Interface(tokenFeed);\r\n        try dataFeed.latestRoundData()\r\n            returns (uint80, int256 a, uint256, uint256, uint80)\r\n        {\r\n            answer = a;\r\n        } catch {\r\n            revert InvalidAggregator(tokenFeed);\r\n        }\r\n        return (answer, dataFeed.decimals());\r\n    }\r\n}"
+      }
+    }
+  }
+}
