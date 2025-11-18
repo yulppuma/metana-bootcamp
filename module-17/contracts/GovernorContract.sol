@@ -80,4 +80,9 @@ contract GovernorContract is Governor, GovernorSettings, GovernorCountingSimple,
     {
         return super._executor();
     }
+
+    function quorumNumerator() public view override returns (uint256) {
+        return super.quorumNumerator();
+    }
+
 }
