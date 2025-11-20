@@ -1,0 +1,26 @@
+// contracts/Box.sol
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.27;
+
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
+
+contract Box is Ownable {
+    uint256 private value;
+
+    // Emitted when the stored value changes
+    event ValueChanged(uint256 newValue);
+
+    constructor() Ownable(msg.sender){}
+
+
+    // Stores a new value in the contract
+    function store(uint256 newValue) public onlyOwner {
+    value = newValue;
+    emit ValueChanged(newValue);
+    }
+
+    // Reads the last stored value
+    function retrieve() public view returns (uint256) {
+    return value;
+    }
+}
