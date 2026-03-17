@@ -1,35 +1,248 @@
-# metana-bootcamp Module-13-14
+# MyScan
+
+MyScan is a decentralized transaction visualization platform that combines the usability of traditional payment applications with the transparency of blockchain explorers.
+
+The application enables users to analyze cryptocurrency transactions through a social-style interface while integrating real-time oracle data and automated monitoring systems.
+
+🔗 Live Demo  
+https://myscan-alpha.vercel.app/
+
+---
+
+# Overview
+
+Traditional blockchain explorers like Etherscan provide detailed analytics but can be difficult for non-technical users to interpret.
+
+Conversely, consumer payment platforms such as Venmo or PayPal provide intuitive transaction interfaces but rely on centralized infrastructure.
+
+MyScan bridges this gap by providing:
+
+• A **user-friendly transaction interface**  
+• **Blockchain transparency** through on-chain data  
+• **Real-time price data** using Chainlink oracles  
+• **Automated monitoring** to detect stale or deprecated data feeds  
+
+The goal is to make blockchain transaction analysis accessible to everyday users while maintaining decentralized trust guarantees.
+
+---
+
+# Key Features
+
+## Social-style Transaction History
+
+Users can:
+
+- Attach **memos** to transactions
+- Assign **contact names** to wallet addresses
+- View **transaction timestamps**
+- Track historical transaction values
+
+---
+
+## Real-Time Oracle Price Integration
+
+MyScan integrates **Chainlink Price Feeds** to convert cryptocurrency values into USD at the time of the transaction.
+
+This enables users to compare:
+
+- **Value at time of transaction**
+- **Current asset value**
+
+Example scenario:
+
+George sends $5 worth of ETH to Jesse.
+
+One week later the same ETH may now be worth $6.
+
+MyScan highlights this change directly within the transaction history.
+
+---
+
+## Automated Oracle Monitoring
+
+The system includes a smart contract compatible with **Chainlink Keepers (Automation)** to detect:
+
+- Stale price feeds
+- Deprecated oracle data
+- Invalid or outdated pricing
+
+Automated upkeep ensures the application continues to operate using reliable data sources.
+
+---
+
+# Architecture
+
+The platform consists of four primary layers:
+
+Frontend (React + Vite)  
+↓  
+Web3 Interface (Ethers.js)  
+↓  
+Smart Contracts (Solidity)  
+↓  
+Chainlink Infrastructure  
+• Price Feed Oracles  
+• Chainlink Keepers (Automation)
+
+---
+
+# Smart Contract System
+
+The backend architecture consists of **three smart contracts working together**.
+
+## Transaction Contract
+
+Responsible for:
+
+- Recording ETH and ERC20 transactions
+- Storing transaction metadata (memo, timestamp)
+- Mapping wallet addresses to user-friendly contact names
+
+---
+
+## Oracle Price Feed Contract
+
+Responsible for:
+
+- Fetching asset pricing from Chainlink Price Feeds
+- Converting cryptocurrency values to USD
+- Maintaining price references used for transaction comparisons
+
+---
+
+## Automation Monitoring Contract
+
+Responsible for:
+
+- Detecting stale oracle data
+- Triggering upkeep logic
+- Ensuring price feeds remain valid and reliable
+
+---
+
+# Tech Stack
+
+## Blockchain
+
+- Solidity  
+- Ethereum (Sepolia Testnet)  
+- Chainlink Price Feeds  
+- Chainlink Keepers (Automation)
+
+---
+
+## Smart Contract Tooling
+
+- Hardhat  
+- OpenZeppelin  
+- Mocha / Chai
+
+---
+
+## Frontend
+
+- React  
+- Vite  
+- Ethers.js  
+- TailwindCSS
+
+---
+
+## Development Tools
+
+- MetaMask  
+- Git  
+- VS Code
+
+---
+
+# Project Structure
+
+module-13-14
+
+client  
+• React frontend application
+
+contracts  
+• Solidity smart contracts  
+• deployment scripts  
+• test suite
+
+README.md
+
+---
+
+# Local Development Setup
+
 ## Prerequisites
-### Before you begin, ensure you are able to run the following tools on your system:
-### Node.js & npm (Node.js v16+ recommended) (https://nodejs.org/en)
-### Git (https://git-scm.com/)
-### VS Code (https://code.visualstudio.com/)
-### Hardhat (installed via npm) (https://hardhat.org/)
 
-## What is MyScan?
-# MyScan is a decentralized application inspired by social payment apps like Venmo, and 'user-friendly' interfaces like Etherscan. While apps like Venmo, Paypal, or Zelle are centralized and act as 'trusted' intermediaries, they are at the forefront of payment apps for the average user. They are simple to use, and integrate to everyday life. Etherscan, on the other hand, is decentralized and provides in-depth analytics for every transaction. While for the average EVM developer this is user-friendly, the average consumer won't be able to understand half of the details presented by Etherscan. While both apps have their pros and cons they can meet halfway, that is where MyScan comes in.
-## How does MyScan work?
-# MyScan keeps the social aspect by allowing users to name their contacts instead of just seeing an address string, leave a memos for the reason for the transaction (or a witty note), and shows their respective cryptocurrency in USD($) as well as the time of the transaction. MyScan also incorporates price feed oracle data and automation tools to detect stale data. User A, George, might have sent $5 worth of ETH to Jesse on a given day, but a week later they see that actually that ETH is now worth $6.
+Ensure the following tools are installed:
 
-## Why use MyScan?
-# The main appeal of dApps is obviously the decentralized aspect, but what will it take to convert traditional web2 users onto web3 or other blockchain technologies? There are many different applications that are trying to reach this breakpoint but nothing has hit the margin just yet. Majority of users are still using Twitter, Facebook, Paypal, Reddit, etc. Because of this, a lot of user analytics  are still stuck using web2 application data which, in turn, causes sponsors, companies, and general users to use these apps. MyScan aims to incorporate successful features from traditional applications in a web3 space. 
+- Node.js (v16+ recommended)
+- npm
+- Git
+- VS Code
+- Hardhat
 
-## MyScan Setup for Windows via VS Code terminal
-### 1. Clone the repository
-``` git clone git@github.com:yulppuma/metana-bootcamp.git```
-### 2. Install dependencies
-``` cd module-13-14```
-#### To run the frontend, cd into client directory. To run smart contract test code, cd into contracts directory
-``` cd client ``` 
-``` cd contracts ```
-```npm install```
-### 3. Compile the smart contracts
-``` npx hardhat compile```
-### 4. Run Tests (this compiles the contracts in the background as well)
-``` npx hardhat test```
-### 5. Start the development server in the client folder
-``` npm run dev```
-### 6. Open preferred browser when ready in the console
+---
 
+# Installation
 
+Clone the repository:
 
+git clone https://github.com/yulppuma/metana-bootcamp.git
+
+Navigate to the project directory:
+
+cd module-13-14
+
+---
+
+# Install Dependencies
+
+Install dependencies in both the frontend and smart contract directories.
+
+Frontend:
+
+cd client  
+npm install
+
+Smart Contracts:
+
+cd ../contracts  
+npm install
+
+---
+
+# Compile Smart Contracts
+
+npx hardhat compile
+
+---
+
+# Run Tests
+
+npx hardhat test
+
+---
+
+# Start the Frontend
+
+From the client directory:
+
+npm run dev
+
+Open the local development URL shown in the terminal.
+
+---
+
+# Future Improvements
+
+Potential improvements include:
+
+- Drastically improve the UI
+- Multi-chain support
+- Advanced transaction analytics
+- Expanded wallet activity visualization
+- Layer 2 compatibility
+- Historical price analytics dashboard
