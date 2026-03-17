@@ -1,12 +1,18 @@
-# React + Vite
+# metana-bootcamp Module-11
+## Prerequisites
+### Before you begin, ensure you are able to run the following tools on your system:
+### Node.js & npm (Node.js v16+ recommended) (https://nodejs.org/en)
+### Git (https://git-scm.com/)
+### VS Code (https://code.visualstudio.com/)
+### Hardhat (installed via npm) (https://hardhat.org/)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Setup for Windows via VS Code terminal
+### 1. Clone the repository
+``` git clone git@github.com:yulppuma/metana-bootcamp.git```
+### 2. Install dependencies
+``` cd module-11/client```
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```npm install```
+### 3. Start the development server in the client folder
+``` npm run dev```
+### 4. Open preferred browser when ready in the console
